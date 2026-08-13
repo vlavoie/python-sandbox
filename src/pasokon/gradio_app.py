@@ -31,9 +31,9 @@ class FPVPOVApp:
         
         # Load skill files
         self.skill_dir = Path(__file__).parent.parent.parent
-        with open(self.skill_dir / "fpv-pov-image.md", "r") as f:
+        with open(self.skill_dir / "fpv-pov-image.md", "r", encoding='utf-8') as f:
             self.prompt_skill = f.read()
-        with open(self.skill_dir / "fpv-pov-review.md", "r") as f:
+        with open(self.skill_dir / "fpv-pov-review.md", "r", encoding='utf-8') as f:
             self.review_skill = f.read()
     
     def initialize_client(self, api_key: str) -> str:
