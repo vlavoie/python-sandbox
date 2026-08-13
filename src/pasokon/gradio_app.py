@@ -161,6 +161,20 @@ class FPVPOVApp:
         """Generate the current project display string for the top bar."""
         return f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action"
     
+    def clear_state(self):
+        """Clear all project state variables."""
+        self.current_prompt = ""
+        self.current_scene = ""
+        self.reference_image_path = None
+        self.additional_images_paths = []
+        self.generated_images = []
+        self.iteration_count = 0
+        self.phase1_review_history = []
+        self.phase1_review_context = {}
+        self.greenzone_image_path = None
+        self.current_phase2_description = ""
+        self.review_mode = "phase1"
+    
     def set_project_name(self, project_name: str) -> Tuple[str, str]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
@@ -171,9 +185,19 @@ class FPVPOVApp:
         sanitized = sanitized.strip().replace(' ', '-').lower()
         
         if sanitized != self.project_name:
+            # Check if this is a new project (doesn't exist yet)
+            metadata_path = self.output_dir / sanitized / ".project_metadata.json"
+            is_new_project = not metadata_path.exists()
+            
+            if is_new_project:
+                # New project - clear all state
+                self.clear_state()
+            
             self.project_name = sanitized
-            self.iteration_count = 0
-            return f"✅ Project set to: {sanitized} (Iteration counter reset)", self._get_project_display_string()
+            status_msg = f"✅ Project set to: {sanitized}"
+            if is_new_project:
+                status_msg += " (New project - state cleared)"
+            return status_msg, self._get_project_display_string()
         return f"📁 Project: {sanitized}", self._get_project_display_string()
     
     def save_uploaded_file(self, file) -> Optional[str]:
@@ -299,6 +323,9 @@ class FPVPOVApp:
     
     def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str]:
         """Load project state from disk."""
+        # Clear state before loading to ensure clean slate
+        self.clear_state()
+        
         try:
             # If no project specified, try to load the last project
             if not project_name:
