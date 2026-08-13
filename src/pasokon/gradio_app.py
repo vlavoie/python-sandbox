@@ -8,12 +8,19 @@ import shutil
 from PIL import Image
 import io
 import os
+import sys
 from dotenv import load_dotenv
 
 from .grok_client import GrokClient
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Force UTF-8 encoding on Windows
+if sys.platform == 'win32':
+    import locale
+    # Set environment variable for Python UTF-8 mode
+    os.environ.setdefault('PYTHONUTF8', '1')
 
 
 class FPVPOVApp:
@@ -29,12 +36,20 @@ class FPVPOVApp:
         self.generated_images = []
         self.iteration_count = 0
         
-        # Load skill files
+        # Load skill files with explicit UTF-8 encoding
         self.skill_dir = Path(__file__).parent.parent.parent
-        with open(self.skill_dir / "fpv-pov-image.md", "r", encoding='utf-8') as f:
-            self.prompt_skill = f.read()
-        with open(self.skill_dir / "fpv-pov-review.md", "r", encoding='utf-8') as f:
-            self.review_skill = f.read()
+        try:
+            with open(self.skill_dir / "fpv-pov-image.md", "r", encoding='utf-8', errors='replace') as f:
+                self.prompt_skill = f.read()
+            with open(self.skill_dir / "fpv-pov-review.md", "r", encoding='utf-8', errors='replace') as f:
+                self.review_skill = f.read()
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Skill files not found. Please ensure fpv-pov-image.md and fpv-pov-review.md "
+                f"are in the project root directory: {self.skill_dir}"
+            ) from e
+        except Exception as e:
+            raise Exception(f"Error loading skill files: {e}") from e
     
     def initialize_client(self, api_key: str) -> str:
         """Initialize the Grok client with API key."""

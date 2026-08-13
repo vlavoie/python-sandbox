@@ -1,6 +1,13 @@
 """Main CLI entry point for pasokon."""
 
 import click
+import sys
+import os
+
+# Force UTF-8 encoding on Windows
+if sys.platform == 'win32':
+    os.environ.setdefault('PYTHONUTF8', '1')
+
 from pasokon.commands import hello, mouse, fpv_pov
 
 
