@@ -2,7 +2,7 @@
 
 import gradio as gr
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 import tempfile
 import shutil
 from PIL import Image
@@ -156,7 +156,11 @@ class FPVPOVApp:
             return f"✅ Image model updated to: {model_name}"
         return "❌ Client not initialized"
     
-    def set_project_name(self, project_name: str) -> str:
+    def _get_project_display_string(self) -> str:
+        """Generate the current project display string for the top bar."""
+        return f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action"
+    
+    def set_project_name(self, project_name: str) -> Tuple[str, str]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
             return "❌ Project name cannot be empty"
@@ -290,7 +294,7 @@ class FPVPOVApp:
         except Exception as e:
             return f"⚠️ Could not save project: {str(e)}"
     
-    def load_project_state(self, project_name: str = None) -> str:
+    def load_project_state(self, project_name: str = None) -> Tuple[str, str]:
         """Load project state from disk."""
         try:
             # If no project specified, try to load the last project
@@ -336,10 +340,10 @@ class FPVPOVApp:
 🖼️ Character reference: {'✅ Available' if ref_exists else '❌ Missing'}
 ➕ Additional images: {additional_count}
 📸 Generated images: {len(self.generated_images)}
-🔄 Iterations: {self.iteration_count}"""
+🔄 Iterations: {self.iteration_count}""", self._get_project_display_string()
             
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}"
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string()
     
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -376,16 +380,16 @@ class FPVPOVApp:
         reference_image,
         scene_description: str,
         additional_images: Optional[List] = None
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, Any]:
         """Generate the initial Grok Imagine prompt."""
         if not self.client:
-            return "❌ Please configure your API key first.", ""
+            return "❌ Please configure your API key first.", "", gr.Tabs(selected=1)
         
         if not reference_image:
-            return "❌ Please upload a character reference image.", ""
+            return "❌ Please upload a character reference image.", "", gr.Tabs(selected=1)
         
         if not scene_description.strip():
-            return "❌ Please provide a scene description.", ""
+            return "❌ Please provide a scene description.", "", gr.Tabs(selected=1)
         
         try:
             # Save reference image
@@ -412,7 +416,7 @@ class FPVPOVApp:
             # Auto-save project state
             self.save_project_state()
             
-            return "✅ Prompt generated successfully!", self.current_prompt
+            return "✅ Prompt generated successfully!", self.current_prompt, gr.Tabs(selected=2)
             
         except Exception as e:
             error_msg = str(e)
@@ -421,7 +425,7 @@ class FPVPOVApp:
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return f"❌ Error generating prompt: {error_msg}", ""
+            return f"❌ Error generating prompt: {error_msg}", "", gr.Tabs(selected=1)
     
     def save_images_permanently(
         self,
@@ -475,16 +479,16 @@ class FPVPOVApp:
         prompt: str,
         num_images: int = 3,
         aspect_ratio: str = "16:9"
-    ) -> Tuple[str, List]:
+    ) -> Tuple[str, List, List]:
         """Generate a batch of images using Grok Imagine."""
         if not self.client:
-            return "❌ Please configure your API key first.", []
+            return "❌ Please configure your API key first.", [], []
         
         if not prompt.strip():
-            return "❌ Please provide a prompt.", []
+            return "❌ Please provide a prompt.", [], []
         
         if not self.reference_image_path:
-            return "❌ No reference image available.", []
+            return "❌ No reference image available.", [], []
         
         try:
             self.iteration_count += 1
@@ -500,7 +504,7 @@ class FPVPOVApp:
             
             # Check if we got any images
             if not image_data_list or len(image_data_list) == 0:
-                return "❌ No images were successfully generated. Check console for errors.", []
+                return "❌ No images were successfully generated. Check console for errors.", [], []
             
             # Save to permanent directory
             saved_dir = self.save_images_permanently(
@@ -547,10 +551,10 @@ class FPVPOVApp:
             # Auto-save project state
             self.save_project_state()
             
-            return status_msg, images
+            return status_msg, images, images
             
         except Exception as e:
-            return f"❌ Error generating images: {str(e)}", []
+            return f"❌ Error generating images: {str(e)}", [], []
     
     def start_phase1_review(
         self,
@@ -775,32 +779,32 @@ Failed image files being reviewed:
         
         return "", "❌ No valid prompt found in conversation history."
     
-    def set_phase1_mode(self) -> str:
+    def set_phase1_mode(self) -> Tuple[str, str]:
         """Reset to Phase 1 review mode."""
         self.review_mode = "phase1"
-        return "✅ Switched to Phase 1 mode - reviews will use character + additional characters"
+        return "✅ Switched to Phase 1 mode - reviews will use character + additional characters", self._get_project_display_string()
     
     def set_phase2_mode_and_generate_prompt(
         self,
         greenzone_image,
         enhancement_description: str
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, str]:
         """Set Phase 2 context and generate enhancement prompt.
         
         This sets up the context for Phase 2 review (which uses Tab 3).
         After generating images in Tab 2, come back to Tab 3 to review them.
         """
         if not self.client:
-            return "❌ Please configure your API key first.", ""
+            return "❌ Please configure your API key first.", "", self._get_project_display_string()
         
         if not greenzone_image:
-            return "❌ Please upload the green-zoned base image.", ""
+            return "❌ Please upload the green-zoned base image.", "", self._get_project_display_string()
         
         if not self.reference_image_path:
-            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", ""
+            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", "", self._get_project_display_string()
         
         if not enhancement_description.strip():
-            return "❌ Please provide enhancement description.", ""
+            return "❌ Please provide enhancement description.", "", self._get_project_display_string()
         
         try:
             # Save greenzone image and set Phase 2 mode
@@ -843,10 +847,10 @@ Context:
             # Auto-save project state
             self.save_project_state()
             
-            return status, self.current_prompt
+            return status, self.current_prompt, self._get_project_display_string()
             
         except Exception as e:
-            return f"❌ Error: {str(e)}", ""
+            return f"❌ Error: {str(e)}", "", self._get_project_display_string()
     
     
     def review_enhancement(
@@ -971,9 +975,11 @@ Review the failed enhancement attempts and identify what went wrong."""
             # Current project indicator
             with gr.Row():
                 current_project_display = gr.Markdown(f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action")
+                manual_save_btn = gr.Button("💾 Save Now", scale=0, size="sm")
             
             # Main workflow tabs
-            with gr.Tabs():
+            main_tabs = gr.Tabs()
+            with main_tabs:
                 # Tab 1: Project Management
                 with gr.Tab("💾 Project Management"):
                     gr.Markdown("### Load & Save Projects")
@@ -1005,9 +1011,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                         interactive=False,
                         lines=8
                     )
-                    
-                    manual_save_btn = gr.Button("💾 Save Current State (auto-saves after each action)")
-                    refresh_projects_btn = gr.Button("🔄 Refresh Project List")
                 
                 # Tab 2: Generate Prompt
                 with gr.Tab("2️⃣ Generate Prompt"):
@@ -1033,11 +1036,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                             )
                     
                     generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
-                    generated_prompt = gr.Textbox(
-                        label="Generated Prompt",
-                        lines=15,
-                        interactive=True
-                    )
                 
                 # Tab 3: Image Generation
                 with gr.Tab("3️⃣ Generate Images"):
@@ -1047,6 +1045,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                         prompt_to_use = gr.Textbox(
                             label="Prompt (edit if needed)",
                             lines=10,
+                            max_lines=10,
                             placeholder="Paste or edit the prompt here..."
                         )
                     
@@ -1074,13 +1073,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                             columns=3,
                             height="auto"
                         )
-                    
-                    # Copy prompt from previous tab
-                    generated_prompt.change(
-                        fn=lambda x: x,
-                        inputs=[generated_prompt],
-                        outputs=[prompt_to_use]
-                    )
                     
                 # Tab 4: Review and Correction
                 with gr.Tab("4️⃣ Review & Correct"):
@@ -1207,13 +1199,19 @@ Review the failed enhancement attempts and identify what went wrong."""
             set_project_btn.click(
                 fn=self.set_project_name,
                 inputs=[project_name_input_dup],
-                outputs=[project_mgmt_status]
+                outputs=[project_mgmt_status, current_project_display]
+            )
+            
+            project_name_input_dup.submit(
+                fn=self.set_project_name,
+                inputs=[project_name_input_dup],
+                outputs=[project_mgmt_status, current_project_display]
             )
             
             load_project_btn.click(
                 fn=self.load_project_state,
                 inputs=[project_selector],
-                outputs=[project_mgmt_status]
+                outputs=[project_mgmt_status, current_project_display]
             )
             
             manual_save_btn.click(
@@ -1221,7 +1219,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                 outputs=[project_mgmt_status]
             )
             
-            refresh_projects_btn.click(
+            project_selector.focus(
                 fn=lambda: gr.Dropdown(choices=self.list_projects()),
                 outputs=[project_selector]
             )
@@ -1230,14 +1228,14 @@ Review the failed enhancement attempts and identify what went wrong."""
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
                 inputs=[reference_image, scene_description, additional_images],
-                outputs=[unified_status, generated_prompt]
+                outputs=[unified_status, prompt_to_use, main_tabs]
             )
             
             # Tab 3: Generate Images
             generate_images_btn.click(
                 fn=self.generate_images_batch,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
-                outputs=[unified_status, output_gallery]
+                outputs=[unified_status, output_gallery, failed_images_gallery]
             )
             
             # Tab 4: Review & Correct
@@ -1273,7 +1271,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             enhance_prompt_btn.click(
                 fn=self.set_phase2_mode_and_generate_prompt,
                 inputs=[green_base_image, enhancement_description],
-                outputs=[unified_status, enhancement_prompt]
+                outputs=[unified_status, enhancement_prompt, current_project_display]
             )
             
             copy_phase2_to_gen_btn.click(
@@ -1284,7 +1282,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             
             reset_to_phase1_btn.click(
                 fn=self.set_phase1_mode,
-                outputs=[unified_status]
+                outputs=[unified_status, current_project_display]
             )
             
             # Model selection updates
