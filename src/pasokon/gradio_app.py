@@ -175,10 +175,10 @@ class FPVPOVApp:
         self.current_phase2_description = ""
         self.review_mode = "phase1"
     
-    def set_project_name(self, project_name: str) -> Tuple[str, str]:
+    def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str, List]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string()
+            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
         
         # Sanitize project name (remove special characters)
         sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
@@ -197,8 +197,22 @@ class FPVPOVApp:
             status_msg = f"✅ Project set to: {sanitized}"
             if is_new_project:
                 status_msg += " (New project - state cleared)"
-            return status_msg, self._get_project_display_string()
-        return f"📁 Project: {sanitized}", self._get_project_display_string()
+            
+            # Return cleared UI values for new project, or current values for existing project
+            return (
+                status_msg,
+                self._get_project_display_string(),
+                "" if is_new_project else self.current_prompt,
+                [] if is_new_project else self.generated_images,
+                None if is_new_project else self.reference_image_path,
+                "" if is_new_project else self.current_scene,
+                [] if is_new_project else self.additional_images_paths,
+                [] if is_new_project else self.phase1_review_history,
+                None if is_new_project else self.greenzone_image_path,
+                "" if is_new_project else self.current_phase2_description,
+                [] if is_new_project else self.generated_images  # output_gallery
+            )
+        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.current_phase2_description, self.generated_images
     
     def save_uploaded_file(self, file) -> Optional[str]:
         """Save an uploaded file to a temporary location."""
@@ -321,7 +335,7 @@ class FPVPOVApp:
         except Exception as e:
             return f"⚠️ Could not save project: {str(e)}"
     
-    def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str]:
+    def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str, List]:
         """Load project state from disk."""
         # Clear state before loading to ensure clean slate
         self.clear_state()
@@ -333,12 +347,12 @@ class FPVPOVApp:
                 if last_project_path.exists():
                     project_name = last_project_path.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, ""
+                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
             
             metadata_path = self._get_project_metadata_path(project_name)
             
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, ""
+                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
             
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -387,10 +401,10 @@ class FPVPOVApp:
 📸 Generated images: {len(self.generated_images)}
 🔄 Iterations: {self.iteration_count}
 💬 Review history: {len(self.phase1_review_history)} message(s)
-🎨 Phase 2: {'✅ Configured' if greenzone_image_to_load else '❌ Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, self.current_scene, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, phase2_desc_to_load
+🎨 Phase 2: {'✅ Configured' if greenzone_image_to_load else '❌ Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, self.current_scene, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, phase2_desc_to_load, images_to_display
             
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, ""
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
     
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -1248,19 +1262,19 @@ Review the failed enhancement attempts and identify what went wrong."""
             set_project_btn.click(
                 fn=self.set_project_name,
                 inputs=[project_name_input_dup],
-                outputs=[project_mgmt_status, current_project_display]
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
             )
             
             project_name_input_dup.submit(
                 fn=self.set_project_name,
                 inputs=[project_name_input_dup],
-                outputs=[project_mgmt_status, current_project_display]
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
             )
             
             load_project_btn.click(
                 fn=self.load_project_state,
                 inputs=[project_selector],
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description]
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
             )
             
             manual_save_btn.click(
@@ -1353,7 +1367,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             # Auto-load last project on page load
             app.load(
                 fn=lambda: self.load_project_state(),
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description]
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
             )
             
         return app
