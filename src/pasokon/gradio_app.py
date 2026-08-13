@@ -75,7 +75,8 @@ class FPVPOVApp:
         
         # Try to auto-load the last project
         try:
-            load_msg = self.load_project_state()
+            load_results = self.load_project_state()
+            load_msg = load_results[0]  # First element is the status message
             if "Loaded project" in load_msg:
                 print(f"\n{load_msg}\n")
         except Exception as e:
@@ -273,6 +274,8 @@ class FPVPOVApp:
                 "review_mode": self.review_mode,
                 "greenzone_image_path": saved_greenzone_image_path,
                 "current_phase2_description": self.current_phase2_description,
+                "phase1_review_history": self.phase1_review_history,
+                "phase1_review_context": self.phase1_review_context,
                 "last_saved": datetime.now().isoformat(),
             }
             
@@ -294,7 +297,7 @@ class FPVPOVApp:
         except Exception as e:
             return f"⚠️ Could not save project: {str(e)}"
     
-    def load_project_state(self, project_name: str = None) -> Tuple[str, str]:
+    def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str]:
         """Load project state from disk."""
         try:
             # If no project specified, try to load the last project
@@ -303,12 +306,12 @@ class FPVPOVApp:
                 if last_project_path.exists():
                     project_name = last_project_path.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found"
+                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, ""
             
             metadata_path = self._get_project_metadata_path(project_name)
             
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'"
+                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, ""
             
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -324,12 +327,27 @@ class FPVPOVApp:
             self.review_mode = state.get("review_mode", "phase1")
             self.greenzone_image_path = state.get("greenzone_image_path")
             self.current_phase2_description = state.get("current_phase2_description", "")
+            self.phase1_review_history = state.get("phase1_review_history", [])
+            self.phase1_review_context = state.get("phase1_review_context", {})
             
             last_saved = state.get("last_saved", "unknown")
             
             # Check if reference images exist
             ref_exists = self.reference_image_path and Path(self.reference_image_path).exists()
             additional_count = len([p for p in self.additional_images_paths if Path(p).exists()])
+            
+            # Load images for display (convert paths to list for gallery)
+            images_to_display = [img for img in self.generated_images if Path(img).exists()]
+            
+            # Prepare reference image (return path if exists, None otherwise)
+            ref_image_to_load = self.reference_image_path if (self.reference_image_path and Path(self.reference_image_path).exists()) else None
+            
+            # Prepare additional images (filter to only existing paths)
+            additional_images_to_load = [p for p in self.additional_images_paths if Path(p).exists()]
+            
+            # Prepare Phase 2 greenzone image and description
+            greenzone_image_to_load = self.greenzone_image_path if (self.greenzone_image_path and Path(self.greenzone_image_path).exists()) else None
+            phase2_desc_to_load = self.current_phase2_description
             
             return f"""✅ Loaded project '{self.project_name}'
             
@@ -340,10 +358,12 @@ class FPVPOVApp:
 🖼️ Character reference: {'✅ Available' if ref_exists else '❌ Missing'}
 ➕ Additional images: {additional_count}
 📸 Generated images: {len(self.generated_images)}
-🔄 Iterations: {self.iteration_count}""", self._get_project_display_string()
+🔄 Iterations: {self.iteration_count}
+💬 Review history: {len(self.phase1_review_history)} message(s)
+🎨 Phase 2: {'✅ Configured' if greenzone_image_to_load else '❌ Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, self.current_scene, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, phase2_desc_to_load
             
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string()
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, ""
     
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -1019,11 +1039,11 @@ Review the failed enhancement attempts and identify what went wrong."""
                     with gr.Row():
                         with gr.Column():
                             reference_image = gr.Image(
-                                label="Character Reference Image (@image1)",
+                                label="Character Reference Image (<IMAGE_0>)",
                                 type="filepath"
                             )
                             additional_images = gr.File(
-                                label="Additional Character References (optional, @image2, @image3...)",
+                                label="Additional Character References (optional, <IMAGE_1>, <IMAGE_2>...)",
                                 file_count="multiple",
                                 type="filepath"
                             )
@@ -1076,26 +1096,31 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                 # Tab 4: Review and Correction
                 with gr.Tab("4️⃣ Review & Correct"):
+                    gr.Markdown("""### Review Failed Images and Get Corrections
+                    
+**How it works:**
+1. **Send a message** to start the review (describe what's wrong or just ask to review)
+2. Images are automatically pulled from the **Generate Images** tab, or you can **upload specific failed images**
+3. Continue the conversation to refine the corrections
+4. Extract the final prompt when satisfied
+
+💡 **First message starts the review** - describe issues or just say "review these images"
+                    """)
+                    
                     with gr.Row():
                         with gr.Column():
-                            gr.Markdown("**Option A: Use generated images**")
-                            gr.Markdown("Images from previous tab will be used automatically")
-                        
-                        with gr.Column():
-                            gr.Markdown("**Option B: Upload specific failed images**")
+                            gr.Markdown("**Option: Upload specific failed images**")
                             failed_images_upload = gr.File(
-                                label="Upload Failed Images",
+                                label="Upload Failed Images (or leave empty to use generated images)",
                                 file_count="multiple",
                                 type="filepath"
                             )
                     
-                    review_initial_comment = gr.Textbox(
-                        label="Your Initial Comments (Optional)",
-                        placeholder="Describe what's wrong with the images (e.g., 'Image 1 has the body upside down, Image 2 has wrong hair color, Image 3 has poor FPV angle')",
-                        lines=3
+                    # Chatbot interface for interactive review
+                    review_chatbot = gr.Chatbot(
+                        label="Review Conversation",
+                        height=400
                     )
-                    
-                    start_review_btn = gr.Button("🔍 Start Review", variant="primary")
                     
                     # Gallery for failed image thumbnails
                     failed_images_gallery = gr.Gallery(
@@ -1106,21 +1131,18 @@ Review the failed enhancement attempts and identify what went wrong."""
                         show_label=True
                     )
                     
-                    # Chatbot interface for interactive review
-                    review_chatbot = gr.Chatbot(
-                        label="Review Conversation",
-                        height=400
-                    )
-                    
-                    gr.Markdown("💡 **Tip:** In your messages, you can refer to specific failed images as 'failed image 1', 'failed image 2', etc.")
+                    gr.Markdown("💡 **Tip:** First message starts the review. In your messages, you can refer to specific failed images as 'failed image 1', 'failed image 2', etc.")
                     
                     with gr.Row():
                         review_user_input = gr.Textbox(
                             label="Your message",
-                            placeholder="Ask questions or request changes (e.g., 'Can you explain why you changed the lighting?', 'Keep the original pose but fix the hands')",
-                            lines=2
+                            placeholder="Start review by describing issues or just say 'review these images'. Then continue conversation to refine corrections.",
+                            lines=2,
+                            scale=10,
+                            show_label=False,
+                            container=False
                         )
-                        send_review_btn = gr.Button("Send", variant="secondary")
+                        send_review_btn = gr.Button("Send", variant="secondary", scale=0, size="sm", min_width=80)
                     
                     gr.Markdown("---")
                     gr.Markdown("**When you're satisfied with the conversation:**")
@@ -1211,7 +1233,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             load_project_btn.click(
                 fn=self.load_project_state,
                 inputs=[project_selector],
-                outputs=[project_mgmt_status, current_project_display]
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description]
             )
             
             manual_save_btn.click(
@@ -1239,27 +1261,30 @@ Review the failed enhancement attempts and identify what went wrong."""
             )
             
             # Tab 4: Review & Correct
-            def send_message(msg, history):
+            def send_message(msg, history, uploaded_files, current_gallery):
                 if not msg.strip():
-                    return history, "", ""
-                return self.continue_phase1_review(msg, history)[0], "", ""
-            
-            start_review_btn.click(
-                fn=self.start_phase1_review,
-                inputs=[review_initial_comment, failed_images_upload],
-                outputs=[review_chatbot, unified_status, failed_images_gallery]
-            )
+                    return history, "", "", current_gallery
+                
+                # Check if review has been started (history is empty)
+                if not history:
+                    # Start the review with the message as initial comment
+                    review_result = self.start_phase1_review(msg, uploaded_files)
+                    return review_result[0], "", review_result[1], review_result[2]
+                else:
+                    # Continue existing review (preserve the gallery)
+                    cont_result = self.continue_phase1_review(msg, history)
+                    return cont_result[0], "", "", current_gallery
             
             send_review_btn.click(
                 fn=send_message,
-                inputs=[review_user_input, review_chatbot],
-                outputs=[review_chatbot, review_user_input, unified_status]
+                inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery],
+                outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery]
             )
             
             review_user_input.submit(
                 fn=send_message,
-                inputs=[review_user_input, review_chatbot],
-                outputs=[review_chatbot, review_user_input, unified_status]
+                inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery],
+                outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery]
             )
             
             extract_and_send_btn.click(
@@ -1296,6 +1321,12 @@ Review the failed enhancement attempts and identify what went wrong."""
                 fn=self.update_image_model,
                 inputs=[image_model_dropdown],
                 outputs=[unified_status]
+            )
+            
+            # Auto-load last project on page load
+            app.load(
+                fn=lambda: self.load_project_state(),
+                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description]
             )
             
         return app
