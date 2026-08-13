@@ -198,17 +198,20 @@ class GrokClient:
         """
         images = []
         
-        # Prepare image URLs
+        # Prepare image URLs as data URIs
         image_urls = [f"data:image/jpeg;base64,{self._encode_image(reference_image)}"]
         if additional_images:
             for img_path in additional_images:
                 image_urls.append(f"data:image/jpeg;base64,{self._encode_image(img_path)}")
         
+        # Format payload for /images/edits endpoint
+        # For multi-image editing, we send images array and prompt
         payload = {
             "model": self.image_model,
-            "prompt": prompt,
-            "images": image_urls,
-            "n": 1,
+            "prompt": {
+                "text": prompt,
+                "images": image_urls  # Multiple reference images
+            },
             "aspect_ratio": aspect_ratio
         }
         
@@ -222,6 +225,14 @@ class GrokClient:
         if len(image_urls) > 1:
             print(f"   ✅ {len(image_urls) - 1} additional image(s) (@image2, @image3...) being sent")
         
+        # DEBUG: Show first 500 chars of prompt
+        print(f"\n📝 PROMPT PREVIEW (first 500 chars):")
+        print(f"   {prompt[:500]}...")
+        if "@image" in prompt.lower():
+            print(f"   ⚠️  WARNING: Prompt contains @image references!")
+            print(f"   ⚠️  The API might not understand @image1, @image2 syntax!")
+            print(f"   ⚠️  This could be why FPV/style matching fails!")
+        
         def generate_single_image(index: int) -> tuple[int, bytes]:
             """Generate a single image (for parallel execution)."""
             with httpx.Client(timeout=180.0) as client:
@@ -230,7 +241,7 @@ class GrokClient:
                     print(f"   🚀 Starting image {index + 1}/{num_images}...")
                     
                     response = client.post(
-                        f"{self.base_url}/images/generations",
+                        f"{self.base_url}/images/edits",  # FIXED: Use edits endpoint for reference images
                         headers=self.headers,
                         json=payload
                     )
