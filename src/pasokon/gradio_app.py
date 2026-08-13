@@ -38,11 +38,14 @@ class FPVPOVApp:
         self.iteration_count = 0
         self.project_name = "untitled-project"
         
-        # Review chat histories
+        # Review chat histories (Tab 3 handles both Phase 1 and Phase 2 reviews)
         self.phase1_review_history = []
-        self.phase2_review_history = []
         self.phase1_review_context = {}
-        self.phase2_review_context = {}
+        
+        # Phase 2 context (for enhancement generation in Tab 4)
+        self.greenzone_image_path = None
+        self.current_phase2_description = ""
+        self.review_mode = "phase1"  # or "phase2" - controls image ordering in Tab 3
         
         # Model lists
         self.available_chat_models = []
@@ -355,9 +358,16 @@ class FPVPOVApp:
     
     def start_phase1_review(
         self,
+        user_comment: str,
         manual_uploaded_images: Optional[List] = None
     ) -> Tuple[List, str]:
-        """Start an interactive review conversation for Phase 1."""
+        """Start an interactive review conversation.
+        
+        This handles BOTH Phase 1 and Phase 2 reviews.
+        The review_mode instance variable determines image ordering:
+        - phase1: IMAGE_0=character, IMAGE_1+=additional characters
+        - phase2: IMAGE_0=character, IMAGE_1=greenzone base
+        """
         if not self.client:
             return [], "❌ Please configure your API key first."
         
@@ -377,31 +387,85 @@ class FPVPOVApp:
             return [], "❌ No images to review. Please generate or upload images first."
         
         try:
+            # Determine image ordering based on review mode
+            if self.review_mode == "phase2":
+                # Phase 2: IMAGE_0=character, IMAGE_1=greenzone
+                reference_image = self.reference_image_path
+                additional_images = [self.greenzone_image_path] if self.greenzone_image_path else []
+                scene_description = f"""Phase 2 Enhancement Review:
+{self.current_phase2_description}
+
+Context:
+- <IMAGE_0> is the character reference for style/appearance (SAME as Phase 1)
+- <IMAGE_1> is the green-zoned base image marking where to add elements
+- Only add inside green zones on <IMAGE_1>
+- Erase all green paint afterward
+- Lock style to <IMAGE_0>
+
+Review the failed enhancement attempts."""
+                mode_label = "Phase 2 Enhancement"
+            else:
+                # Phase 1: IMAGE_0=character, IMAGE_1+=additional characters
+                reference_image = self.reference_image_path
+                additional_images = self.additional_images_paths if self.additional_images_paths else None
+                scene_description = self.current_scene
+                mode_label = "Phase 1"
+            
             # Store context for this review session
             self.phase1_review_context = {
                 "failed_images": images_to_review,
                 "original_prompt": self.current_prompt,
-                "scene_description": self.current_scene,
-                "reference_image": self.reference_image_path,
-                "additional_images": self.additional_images_paths
+                "scene_description": scene_description,
+                "reference_image": reference_image,
+                "additional_images": additional_images,
+                "review_mode": self.review_mode
             }
+            
+            # Build user's initial message
+            user_initial_msg = f"""[{mode_label} Review]
+
+Here are the failed images to review:
+
+{user_comment if user_comment.strip() else 'Please review these images and suggest corrections.'}
+
+Image Reference Guide:
+- <IMAGE_0> = Character reference (for style/appearance lock)
+{f'- <IMAGE_1> = Green-zoned base (spatial guide for enhancements)' if self.review_mode == 'phase2' else ''}
+{f'- <IMAGE_1>+ = Additional characters' if self.review_mode == 'phase1' and additional_images else ''}
+- Failed images = Shown as thumbnails (refer to as 'failed image 1', 'failed image 2', etc.)"""
             
             # Get initial review
             initial_review = self.client.review_images(
                 failed_images=images_to_review,
                 original_prompt=self.current_prompt,
-                scene_description=self.current_scene,
-                reference_image=self.reference_image_path,
+                scene_description=scene_description,
+                reference_image=reference_image,
                 skill_content=self.review_skill,
-                additional_images=self.additional_images_paths if self.additional_images_paths else None
+                additional_images=additional_images
             )
             
-            # Initialize chat history
+            # Build chat history with image thumbnails
+            # First message: user's comment with image gallery
+            user_msg_with_images = {
+                "text": user_initial_msg,
+                "files": images_to_review  # Gradio will display these as thumbnails
+            }
+            
+            # Initialize chat history with images
             self.phase1_review_history = [
-                ("Please review these failed images and suggest corrections.", initial_review)
+                (user_msg_with_images, initial_review)
             ]
             
-            return self.phase1_review_history, "✅ Review started! You can now ask questions or request changes."
+            instructions = f"""✅ {mode_label} Review started!
+            
+🎯 Mode: {mode_label}
+📸 {len(images_to_review)} failed image(s) shown above
+🗂 <IMAGE_0> = Character reference (always)
+{'🗂 <IMAGE_1> = Green-zoned base' if self.review_mode == 'phase2' else ''}
+💬 Refer to failed images as 'failed image 1', 'failed image 2', etc.
+❓ Ask questions or request changes"""
+            
+            return self.phase1_review_history, instructions
             
         except Exception as e:
             return [], f"❌ Error during review: {str(e)}"
@@ -449,8 +513,15 @@ class FPVPOVApp:
             
             # Add conversation history
             for user_msg, assistant_msg in history:
-                if user_msg != "Please review these failed images and suggest corrections.":
-                    messages.append({"role": "user", "content": user_msg})
+                # Extract text from dict format if needed
+                if isinstance(user_msg, dict):
+                    user_text = user_msg.get("text", "")
+                else:
+                    user_text = user_msg
+                
+                # Skip the initial auto-generated message
+                if user_text and "Here are the failed images to review:" not in user_text:
+                    messages.append({"role": "user", "content": user_text})
                 if assistant_msg:
                     messages.append({"role": "assistant", "content": assistant_msg})
             
@@ -495,192 +566,76 @@ class FPVPOVApp:
         
         return ""
     
-    def start_phase2_review(
+    def set_phase1_mode(self) -> str:
+        """Reset to Phase 1 review mode."""
+        self.review_mode = "phase1"
+        return "✅ Switched to Phase 1 mode - reviews will use character + additional characters"
+    
+    def set_phase2_mode_and_generate_prompt(
         self,
-        green_base_image,
-        enhancement_description: str,
-        failed_enhancement_images: Optional[List] = None
-    ) -> Tuple[List, str]:
-        """Start an interactive review conversation for Phase 2 enhancements.
+        greenzone_image,
+        enhancement_description: str
+    ) -> Tuple[str, str]:
+        """Set Phase 2 context and generate enhancement prompt.
         
-        Args:
-            green_base_image: The base image with green/pink zones (@image1)
-            enhancement_description: What was supposed to be added
-            failed_enhancement_images: Images that failed to meet requirements
+        This sets up the context for Phase 2 review (which uses Tab 3).
+        After generating images in Tab 2, come back to Tab 3 to review them.
         """
         if not self.client:
-            return [], "❌ Please configure your API key first."
+            return "❌ Please configure your API key first.", ""
         
-        if not green_base_image:
-            return [], "❌ Please upload the green-zoned base image."
+        if not greenzone_image:
+            return "❌ Please upload the green-zoned base image.", ""
         
         if not self.reference_image_path:
-            return [], "❌ No character reference found. Please upload a character reference in Tab 1 first."
+            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", ""
         
         if not enhancement_description.strip():
-            return [], "❌ Please provide enhancement description."
-        
-        # Save the base image
-        green_base_path = self.save_uploaded_file(green_base_image)
-        # Use character reference from Phase 1
-        char_ref_path = self.reference_image_path
-        
-        # Get failed images to review
-        images_to_review = []
-        if failed_enhancement_images:
-            for img in failed_enhancement_images:
-                if img is not None:
-                    path = self.save_uploaded_file(img)
-                    if path:
-                        images_to_review.append(path)
-        elif self.generated_images:
-            images_to_review = self.generated_images
-        
-        if not images_to_review:
-            return [], "❌ No enhancement images to review. Please generate or upload images first."
+            return "❌ Please provide enhancement description.", ""
         
         try:
-            # Store context for this review session
-            phase2_scene = f"""Phase 2 Enhancement Review - Green Zone Addition:
+            # Save greenzone image and set Phase 2 mode
+            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
+            self.current_phase2_description = enhancement_description
+            self.review_mode = "phase2"
+            
+            # Build Phase 2 scene description
+            phase2_scene = f"""Phase 2 Enhancement - Green Zone Addition:
 {enhancement_description}
 
 Context:
 - <IMAGE_0> is the character reference for style/appearance matching (SAME as Phase 1)
-- <IMAGE_1> is the base image with green/pink zones marking where elements should be added
+- <IMAGE_1> is the base image with green/pink zones marking where to add elements
 - Only add elements inside the marked zones on <IMAGE_1>
 - Completely erase all green/pink paint afterward
 - Lock appearance/style to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base to modify
-
-Review the failed enhancement attempts and identify what went wrong."""
+- Use <IMAGE_1> as the spatial base to modify"""
             
-            self.phase2_review_context = {
-                "green_base_path": green_base_path,
-                "char_ref_path": char_ref_path,
-                "failed_images": images_to_review,
-                "original_prompt": self.current_prompt,
-                "phase2_scene": phase2_scene,
-                "enhancement_description": enhancement_description
-            }
-            
-            # Get initial review
-            # IMPORTANT: Keep character reference as <IMAGE_0> for consistency with Phase 1
-            corrected_response = self.client.review_images(
-                failed_images=images_to_review,
-                original_prompt=self.current_prompt,
+            # Generate enhancement prompt
+            self.current_scene = phase2_scene
+            self.current_prompt = self.client.generate_prompt(
+                reference_image=self.reference_image_path,  # <IMAGE_0> = character
                 scene_description=phase2_scene,
-                reference_image=char_ref_path,  # <IMAGE_0> = Character reference (consistent!)
-                skill_content=self.review_skill,
-                additional_images=[green_base_path]  # <IMAGE_1> = Green-marked base
+                skill_content=self.prompt_skill,
+                additional_images=[self.greenzone_image_path]  # <IMAGE_1> = greenzone
             )
             
-            # Initialize chat history
-            self.phase2_review_history = [
-                ("Please review these failed enhancement attempts and suggest corrections.", corrected_response)
-            ]
+            status = """✅ Phase 2 enhancement prompt generated!
+
+📋 Next steps:
+1. Copy this prompt to Tab 2 (Generation)
+2. Generate enhanced images in Tab 2
+3. Review results in Tab 3 (it will automatically use Phase 2 mode)
+
+🎯 Phase 2 mode active - Tab 3 will use:
+   • <IMAGE_0> = Character reference (style lock)
+   • <IMAGE_1> = Green-zoned base (spatial guide)"""
             
-            return self.phase2_review_history, "✅ Enhancement review started! You can now ask questions or request changes."
-            
-        except Exception as e:
-            return [], f"❌ Error during enhancement review: {str(e)}"
-    
-    def continue_phase2_review(self, user_message: str, history: List) -> Tuple[List, str]:
-        """Continue the Phase 2 enhancement review conversation."""
-        if not self.client:
-            return history, "❌ Client not initialized"
-        
-        if not user_message.strip():
-            return history, ""
-        
-        try:
-            # Build conversation context with images
-            messages = [{"role": "system", "content": self.review_skill}]
-            
-            # Add image context to first message
-            if self.phase2_review_context:
-                content = []
-                
-                # Add character reference FIRST (<IMAGE_0>) for consistency with Phase 1
-                if self.phase2_review_context.get("char_ref_path"):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['char_ref_path'])}"
-                        }
-                    })
-                
-                # Add green-zoned base image (<IMAGE_1>)
-                if self.phase2_review_context.get("green_base_path"):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['green_base_path'])}"
-                        }
-                    })
-                
-                # Add failed enhancement images (for visual comparison)
-                for img_path in self.phase2_review_context.get("failed_images", []):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"
-                        }
-                    })
-                
-                content.append({
-                    "type": "text",
-                    "text": f"{self.phase2_review_context.get('phase2_scene', '')}\\n\\nOriginal prompt: {self.phase2_review_context.get('original_prompt', '')}"
-                })
-                
-                messages.append({"role": "user", "content": content})
-            
-            # Add conversation history
-            for user_msg, assistant_msg in history:
-                if user_msg != "Please review these failed enhancement attempts and suggest corrections.":
-                    messages.append({"role": "user", "content": user_msg})
-                if assistant_msg:
-                    messages.append({"role": "assistant", "content": assistant_msg})
-            
-            # Add new user message
-            messages.append({"role": "user", "content": user_message})
-            
-            # Get response
-            import httpx
-            with httpx.Client(timeout=120.0) as client:
-                response = client.post(
-                    f"{self.client.base_url}/chat/completions",
-                    headers=self.client.headers,
-                    json={
-                        "model": self.client.chat_model,
-                        "messages": messages
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                assistant_response = result["choices"][0]["message"]["content"]
-            
-            # Update history
-            new_history = history + [(user_message, assistant_response)]
-            self.phase2_review_history = new_history
-            
-            return new_history, ""
+            return status, self.current_prompt
             
         except Exception as e:
-            return history, f"❌ Error: {str(e)}"
+            return f"❌ Error: {str(e)}", ""
     
-    def extract_prompt_from_phase2_chat(self) -> str:
-        """Extract the final prompt from the Phase 2 review chat."""
-        if not self.phase2_review_history:
-            return ""
-        
-        # Get the last assistant message
-        for user_msg, assistant_msg in reversed(self.phase2_review_history):
-            if assistant_msg:
-                # Use the same cleaning logic as the client
-                from pasokon.grok_client import GrokClient
-                return GrokClient._clean_prompt_text(assistant_msg)
-        
-        return ""
     
     def review_enhancement(
         self,
@@ -955,8 +910,20 @@ Review the failed enhancement attempts and identify what went wrong."""
                 
                 # Tab 3: Review and Correction
                 with gr.Tab("3️⃣ Review & Correct"):
-                    gr.Markdown("### Interactive review with the reviewer skill")
-                    gr.Markdown("Have a conversation with the reviewer to refine your prompt!")
+                    gr.Markdown("### Interactive Review System (Handles Both Phase 1 & Phase 2)")
+                    gr.Markdown("""
+                    Review images with an AI assistant to create corrected prompts.
+                    
+                    **Phase 1 Mode (default):** Reviews regular FPV POV images
+                    - <IMAGE_0> = Character reference (style/appearance lock)
+                    - <IMAGE_1>+ = Additional characters (if any)
+                    
+                    **Phase 2 Mode (set in Tab 4):** Reviews green-zone enhancements  
+                    - <IMAGE_0> = Character reference (style lock) - ALWAYS the same!
+                    - <IMAGE_1> = Green-zoned base (spatial guide for enhancements)
+                    
+                    💡 The mode is automatically set based on your workflow.
+                    """)
                     
                     with gr.Row():
                         with gr.Column():
@@ -971,14 +938,22 @@ Review the failed enhancement attempts and identify what went wrong."""
                                 type="filepath"
                             )
                     
+                    review_initial_comment = gr.Textbox(
+                        label="Your Initial Comments (Optional)",
+                        placeholder="Describe what's wrong with the images (e.g., 'Image 1 has the body upside down, Image 2 has wrong hair color, Image 3 has poor FPV angle')",
+                        lines=3
+                    )
+                    
                     start_review_btn = gr.Button("🔍 Start Review", variant="primary")
                     review_status = gr.Textbox(label="Status", interactive=False)
                     
                     # Chatbot interface for interactive review
                     review_chatbot = gr.Chatbot(
-                        label="Review Conversation",
+                        label="Review Conversation (Images shown as thumbnails)",
                         height=400
                     )
+                    
+                    gr.Markdown("💡 **Tip:** In your messages, you can refer to specific failed images as 'failed image 1', 'failed image 2', etc.")
                     
                     with gr.Row():
                         review_user_input = gr.Textbox(
@@ -1004,7 +979,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     # Event handlers
                     start_review_btn.click(
                         fn=self.start_phase1_review,
-                        inputs=[failed_images_upload],
+                        inputs=[review_initial_comment, failed_images_upload],
                         outputs=[review_chatbot, review_status]
                     )
                     
@@ -1038,21 +1013,28 @@ Review the failed enhancement attempts and identify what went wrong."""
                 
                 # Tab 4: Phase 2 - Manual Enhancement
                 with gr.Tab("4️⃣ Phase 2: Enhancements"):
-                    gr.Markdown("### Manual zoning and enhancement generation")
+                    gr.Markdown("### Generate Enhancement Prompts (Green Zone Method)")
                     gr.Markdown("""
-                    This phase is for adding elements that often hallucinate (like hair fringe).
+                    This phase is for adding elements that often fail (like hair fringe) using the green-zone technique.
                     
                     **Workflow:**
                     1. Take your best base image from Phase 1
                     2. Mark green zones in Photoshop/GIMP where you want elements added
-                    3. Upload the green-marked base as @image1 (character reference from Tab 1 will be used as @image2)
+                    3. Upload the green-marked image below
                     4. Describe what to add in the green zones
+                    5. Generate the enhancement prompt
+                    6. **Go to Tab 2** to generate enhanced images
+                    7. **Go to Tab 3** to review (it will automatically use Phase 2 mode)
+                    
+                    **Image Reference Guide (consistent across all tabs):**
+                    - <IMAGE_0> = Character reference (from Tab 1) - ALWAYS for style/appearance
+                    - <IMAGE_1> = Green-zoned base (uploaded below) - spatial guide for where to add elements
                     """)
                     
                     with gr.Row():
                         with gr.Column():
                             green_base_image = gr.Image(
-                                label="Green-Marked Base Image (@image1)",
+                                label="Green-Marked Base Image (<IMAGE_1>)",
                                 type="filepath"
                             )
                         
@@ -1063,118 +1045,34 @@ Review the failed enhancement attempts and identify what went wrong."""
                                 lines=8
                             )
                     
-                    enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt", variant="primary")
-                    enhance_status = gr.Textbox(label="Status", interactive=False)
+                    enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt & Set Phase 2 Mode", variant="primary")
+                    enhance_status = gr.Textbox(label="Status", interactive=False, lines=8)
                     enhancement_prompt = gr.Textbox(
-                        label="Enhancement Prompt",
+                        label="Enhancement Prompt (ready to use in Tab 2)",
                         lines=15,
                         interactive=True
                     )
                     
-                    # This uses the same prompt generation logic but with phase 2 context
+                    copy_phase2_to_gen_btn = gr.Button("📋 Copy to Generation Tab (Tab 2)")
+                    reset_to_phase1_btn = gr.Button("🔄 Reset to Phase 1 Mode (for regular reviews)")
+                    
+                    # Event handlers
                     enhance_prompt_btn.click(
-                        fn=lambda base, desc: self.generate_initial_prompt(
-                            base,
-                            f"Phase 2 Enhancement - Green Zone Addition:\n{desc}\n\nOnly add elements inside the green zones. Completely erase all green paint afterward. Lock everything else to @image1. Use @image2 for style/hair lock.",
-                            [self.reference_image_path] if self.reference_image_path else None
-                        ),
+                        fn=self.set_phase2_mode_and_generate_prompt,
                         inputs=[green_base_image, enhancement_description],
                         outputs=[enhance_status, enhancement_prompt]
                     )
                     
-                    gr.Markdown("---")
-                    gr.Markdown("### 🔍 Interactive Enhancement Review")
-                    gr.Markdown("""
-                    After generating enhanced images in Tab 2, review them here with an interactive conversation.
-                    
-                    **Upload the green-zoned base (character reference from Tab 1 will be used automatically).**
-                    """)
-                    
-                    with gr.Row():
-                        with gr.Column():
-                            review_green_base = gr.Image(
-                                label="Green-Zoned Base Image (@image1)",
-                                type="filepath"
-                            )
-                        
-                        with gr.Column():
-                            review_enhancement_desc = gr.Textbox(
-                                label="What You Tried to Add",
-                                placeholder="What elements did you try to add in the zones?",
-                                lines=6
-                            )
-                            failed_enhancements = gr.File(
-                                label="Failed Enhancement Images (or leave empty to auto-use images from Tab 2)",
-                                file_count="multiple",
-                                type="filepath"
-                            )
-                    
-                    start_enhance_review_btn = gr.Button("🔍 Start Enhancement Review", variant="primary")
-                    review_enhance_status = gr.Textbox(label="Review Status", interactive=False)
-                    
-                    # Chatbot interface for interactive enhancement review
-                    enhance_review_chatbot = gr.Chatbot(
-                        label="Enhancement Review Conversation",
-                        height=400
-                    )
-                    
-                    with gr.Row():
-                        enhance_review_user_input = gr.Textbox(
-                            label="Your message",
-                            placeholder="Ask questions or request changes (e.g., 'Why didn't the hair match the reference?', 'Try keeping more of the original lighting')",
-                            lines=2
-                        )
-                        send_enhance_review_btn = gr.Button("Send", variant="secondary")
-                    
-                    gr.Markdown("---")
-                    gr.Markdown("**When you're satisfied with the conversation, extract the final prompt:**")
-                    
-                    extract_enhance_prompt_btn = gr.Button("📄 Extract Final Enhancement Prompt from Conversation")
-                    corrected_enhancement_prompt = gr.Textbox(
-                        label="Final Corrected Enhancement Prompt",
-                        lines=10,
-                        interactive=True
-                    )
-                    
-                    gr.Markdown("**Copy this corrected prompt to Tab 2 to regenerate enhanced images**")
-                    copy_enhance_to_gen_btn = gr.Button("📋 Copy to Generation Tab")
-                    
-                    # Event handlers for Phase 2 review
-                    start_enhance_review_btn.click(
-                        fn=self.start_phase2_review,
-                        inputs=[review_green_base, review_enhancement_desc, failed_enhancements],
-                        outputs=[enhance_review_chatbot, review_enhance_status]
-                    )
-                    
-                    def send_enhance_message(msg, history):
-                        if not msg.strip():
-                            return history, "", ""
-                        return self.continue_phase2_review(msg, history)[0], "", ""
-                    
-                    send_enhance_review_btn.click(
-                        fn=send_enhance_message,
-                        inputs=[enhance_review_user_input, enhance_review_chatbot],
-                        outputs=[enhance_review_chatbot, enhance_review_user_input, review_enhance_status]
-                    )
-                    
-                    enhance_review_user_input.submit(
-                        fn=send_enhance_message,
-                        inputs=[enhance_review_user_input, enhance_review_chatbot],
-                        outputs=[enhance_review_chatbot, enhance_review_user_input, review_enhance_status]
-                    )
-                    
-                    extract_enhance_prompt_btn.click(
-                        fn=self.extract_prompt_from_phase2_chat,
-                        outputs=[corrected_enhancement_prompt]
-                    )
-                    
-                    copy_enhance_to_gen_btn.click(
+                    copy_phase2_to_gen_btn.click(
                         fn=lambda x: x,
-                        inputs=[corrected_enhancement_prompt],
+                        inputs=[enhancement_prompt],
                         outputs=[prompt_to_use]
                     )
                     
-                    gr.Markdown("**Generate enhanced images using the prompt above in Tab 2**")
+                    reset_to_phase1_btn.click(
+                        fn=self.set_phase1_mode,
+                        outputs=[enhance_status]
+                    )
             
             # Instructions footer
             with gr.Accordion("📖 Instructions", open=False):
