@@ -137,6 +137,23 @@ corrected = client.review_images(
 
 ## Troubleshooting
 
+### Windows Encoding Issues
+
+If you get encoding errors on Windows (especially with emojis or special characters):
+
+1. **Run the encoding test:**
+   ```bash
+   poetry run python test_encoding.py
+   ```
+   This will diagnose any UTF-8 encoding issues.
+
+2. **The app automatically handles UTF-8 on Windows**, but if you still have issues:
+   - Use Windows Terminal (not cmd.exe)
+   - Run `chcp 65001` in your terminal before launching
+   - Set environment variable: `set PYTHONUTF8=1`
+
+### API Errors
+
 ### "API key not configured"
 - Make sure you've either set `XAI_API_KEY` environment variable or entered the key in the Configuration section
 

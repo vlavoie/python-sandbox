@@ -1,5 +1,23 @@
 # Grok API Troubleshooting
 
+## Windows Encoding Issues
+
+If you get encoding errors on Windows, run the encoding test first:
+
+```bash
+poetry run python test_encoding.py
+```
+
+This will verify that UTF-8 encoding is working correctly. The app now automatically:
+- Reconfigures stdout/stderr to UTF-8 on Windows
+- Sets `PYTHONUTF8=1` environment variable
+- Uses UTF-8 with error handling for all file operations
+
+If the test shows encoding issues, you can also:
+1. Set environment variable before running: `set PYTHONUTF8=1`
+2. Run PowerShell as: `chcp 65001` (sets console to UTF-8)
+3. Use Windows Terminal instead of cmd.exe
+
 ## Quick Test
 
 Run this to test your API connection:

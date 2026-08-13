@@ -4,14 +4,23 @@ import click
 import sys
 import os
 
+# Force UTF-8 encoding immediately for Windows
+if sys.platform == 'win32':
+    import io
+    # Reconfigure stdout and stderr to use UTF-8
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    else:
+        # Fallback for older Python versions
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    os.environ['PYTHONUTF8'] = '1'
+
 
 @click.command()
 def fpv_pov():
     """Launch the FPV POV image generation Gradio app."""
-    # Force UTF-8 mode on Windows before importing gradio_app
-    if sys.platform == 'win32':
-        os.environ.setdefault('PYTHONUTF8', '1')
-    
     # Import here to ensure UTF-8 is set first
     from ..gradio_app import launch
     
