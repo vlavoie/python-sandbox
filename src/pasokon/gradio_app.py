@@ -444,13 +444,13 @@ class FPVPOVApp:
     ) -> Tuple[str, str, Any]:
         """Generate the initial Grok Imagine prompt."""
         if not self.client:
-            return "❌ Please configure your API key first.", "", gr.Tabs(selected=1)
+            return "❌ Please configure your API key first.", "", gr.update()
         
         if not reference_image:
-            return "❌ Please upload a character reference image.", "", gr.Tabs(selected=1)
+            return "❌ Please upload a character reference image.", "", gr.update()
         
         if not scene_description.strip():
-            return "❌ Please provide a scene description.", "", gr.Tabs(selected=1)
+            return "❌ Please provide a scene description.", "", gr.update()
         
         try:
             # Save reference image
@@ -477,7 +477,7 @@ class FPVPOVApp:
             # Auto-save project state
             self.save_project_state()
             
-            return "✅ Prompt generated successfully!", self.current_prompt, gr.Tabs(selected=2)
+            return "✅ Prompt generated successfully!", self.current_prompt, gr.update(selected=2)
             
         except Exception as e:
             error_msg = str(e)
@@ -486,7 +486,7 @@ class FPVPOVApp:
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return f"❌ Error generating prompt: {error_msg}", "", gr.Tabs(selected=1)
+            return f"❌ Error generating prompt: {error_msg}", "", gr.update()
     
     def save_images_permanently(
         self,
@@ -718,9 +718,26 @@ IMPORTANT: Always start your response with a brief 1-3 sentence explanation of w
 Failed image files being reviewed:
 {image_list}"""
             
-            # Initialize chat history (Gradio Chatbot expects tuple of strings)
+            # Build display message for chat history (just the user's actual comment)
+            user_display_msg_text = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
+            
+            # Collect all images being sent to API for thumbnail display
+            thumbnail_images = []
+            if reference_image:
+                thumbnail_images.append(reference_image)
+            if additional_images:
+                thumbnail_images.extend(additional_images)
+            thumbnail_images.extend(images_to_review)
+            
+            # Initialize chat history with multimodal format (text + image thumbnails)
+            # Show only the user's actual message in the UI, not the full system prompt
+            user_display_msg = {
+                "text": user_display_msg_text,
+                "files": thumbnail_images
+            }
+            
             self.phase1_review_history = [
-                (user_initial_msg_with_files, initial_review)
+                (user_display_msg, initial_review)
             ]
             
             # Build instructions based on mode
@@ -824,10 +841,10 @@ Failed image files being reviewed:
         except Exception as e:
             return history, f"❌ Error: {str(e)}"
     
-    def extract_prompt_from_phase1_chat(self) -> Tuple[str, str]:
+    def extract_prompt_from_phase1_chat(self) -> Tuple[str, str, Any]:
         """Extract the final prompt from the Phase 1 review chat and send to generation tab."""
         if not self.phase1_review_history:
-            return "", "❌ No review conversation found. Start a review first."
+            return "", "❌ No review conversation found. Start a review first.", gr.update()
         
         # Get the last assistant message
         for user_msg, assistant_msg in reversed(self.phase1_review_history):
@@ -836,9 +853,9 @@ Failed image files being reviewed:
                 from pasokon.grok_client import GrokClient
                 cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
                 if cleaned_prompt:
-                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab (Tab 2). You can now generate images."
+                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab. Switched to Generate Images tab.", gr.update(selected=2)
         
-        return "", "❌ No valid prompt found in conversation history."
+        return "", "❌ No valid prompt found in conversation history.", gr.update()
     
     def set_phase1_mode(self) -> Tuple[str, str]:
         """Reset to Phase 1 review mode."""
@@ -1169,7 +1186,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                         review_user_input = gr.Textbox(
                             label="Your message",
                             placeholder="Start review by describing issues or just say 'review these images'. Then continue conversation to refine corrections.",
-                            lines=2,
+                            lines=1,
+                            max_lines=5,
                             scale=10,
                             show_label=False,
                             container=False
@@ -1330,7 +1348,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             
             extract_and_send_btn.click(
                 fn=self.extract_prompt_from_phase1_chat,
-                outputs=[prompt_to_use, unified_status]
+                outputs=[prompt_to_use, unified_status, main_tabs]
             )
             
             # Tab 5: Phase 2 Enhancements
