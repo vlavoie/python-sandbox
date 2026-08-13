@@ -197,6 +197,38 @@ class FPVPOVApp:
         project_dir = self.output_dir / proj_name
         return project_dir / ".project_metadata.json"
     
+    def _copy_image_to_project(self, image_path: str, image_type: str) -> str:
+        """Copy an image to the project's references directory.
+        
+        Args:
+            image_path: Path to the source image
+            image_type: Type of image (e.g., 'reference', 'additional_0', 'greenzone')
+            
+        Returns:
+            Path to the copied image in the project directory
+        """
+        if not image_path or not Path(image_path).exists():
+            return image_path
+        
+        try:
+            project_dir = self.output_dir / self.project_name
+            references_dir = project_dir / "references"
+            references_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get file extension
+            suffix = Path(image_path).suffix or '.jpg'
+            
+            # Create destination path
+            dest_path = references_dir / f"{image_type}{suffix}"
+            
+            # Copy the file
+            shutil.copy(image_path, dest_path)
+            
+            return str(dest_path)
+        except Exception as e:
+            print(f"Warning: Could not copy {image_type} to project directory: {e}")
+            return image_path
+    
     def save_project_state(self) -> str:
         """Save current project state to disk for persistence across sessions."""
         try:
@@ -205,16 +237,37 @@ class FPVPOVApp:
             
             metadata_path = self._get_project_metadata_path()
             
+            # Copy reference images to project directory for persistence
+            saved_reference_image_path = None
+            if self.reference_image_path:
+                saved_reference_image_path = self._copy_image_to_project(
+                    self.reference_image_path, "character_reference"
+                )
+            
+            saved_additional_images_paths = []
+            if self.additional_images_paths:
+                for idx, img_path in enumerate(self.additional_images_paths):
+                    saved_path = self._copy_image_to_project(
+                        img_path, f"additional_{idx}"
+                    )
+                    saved_additional_images_paths.append(saved_path)
+            
+            saved_greenzone_image_path = None
+            if self.greenzone_image_path:
+                saved_greenzone_image_path = self._copy_image_to_project(
+                    self.greenzone_image_path, "greenzone_base"
+                )
+            
             state = {
                 "project_name": self.project_name,
                 "current_prompt": self.current_prompt,
                 "current_scene": self.current_scene,
-                "reference_image_path": self.reference_image_path,
-                "additional_images_paths": self.additional_images_paths,
+                "reference_image_path": saved_reference_image_path,
+                "additional_images_paths": saved_additional_images_paths,
                 "generated_images": self.generated_images,
                 "iteration_count": self.iteration_count,
                 "review_mode": self.review_mode,
-                "greenzone_image_path": self.greenzone_image_path,
+                "greenzone_image_path": saved_greenzone_image_path,
                 "current_phase2_description": self.current_phase2_description,
                 "last_saved": datetime.now().isoformat(),
             }
@@ -227,7 +280,13 @@ class FPVPOVApp:
             with open(last_project_path, 'w') as f:
                 f.write(self.project_name)
             
-            return f"✅ Project '{self.project_name}' saved"
+            # Count saved images
+            saved_ref_count = 1 if saved_reference_image_path else 0
+            saved_additional_count = len(saved_additional_images_paths)
+            saved_greenzone_count = 1 if saved_greenzone_image_path else 0
+            total_refs = saved_ref_count + saved_additional_count + saved_greenzone_count
+            
+            return f"✅ Project '{self.project_name}' saved ({total_refs} reference image(s) backed up)"
         except Exception as e:
             return f"⚠️ Could not save project: {str(e)}"
     
@@ -263,12 +322,19 @@ class FPVPOVApp:
             self.current_phase2_description = state.get("current_phase2_description", "")
             
             last_saved = state.get("last_saved", "unknown")
+            
+            # Check if reference images exist
+            ref_exists = self.reference_image_path and Path(self.reference_image_path).exists()
+            additional_count = len([p for p in self.additional_images_paths if Path(p).exists()])
+            
             return f"""✅ Loaded project '{self.project_name}'
             
 📅 Last saved: {last_saved}
 🎯 Mode: {self.review_mode}
 📝 Prompt: {'Set' if self.current_prompt else 'Not set'}
-🖼️ Reference: {'Set' if self.reference_image_path else 'Not set'}
+📄 Scene description: {'Set' if self.current_scene else 'Not set'}
+🖼️ Character reference: {'✅ Available' if ref_exists else '❌ Missing'}
+➕ Additional images: {additional_count}
 📸 Generated images: {len(self.generated_images)}
 🔄 Iterations: {self.iteration_count}"""
             
@@ -875,26 +941,39 @@ Review the failed enhancement attempts and identify what went wrong."""
             gr.Markdown("# 🎨 FPV POV Image Generator")
             gr.Markdown("Automate your Grok-based first-person POV image generation workflow")
             
+            # Instructions at the top
+            with gr.Accordion("📖 Instructions", open=False):
+                gr.Markdown("""
+                ### Workflow Overview
+                
+                **Phase 1: Base Image Generation**
+                1. **Generate Prompt**: Upload your character reference and describe the scene
+                2. **Generate Images**: Create 3 (or more) variations using the prompt
+                3. **Review & Correct**: If images have errors, upload them for analysis and get a corrected prompt
+                4. Repeat steps 2-3 until you have a solid base image
+                
+                **Phase 2: Enhancements** (Optional)
+                - For elements that hallucinate (like hair), manually mark zones in an image editor
+                - Generate enhancement prompts for precise additions
+                
+                ### Tips
+                - You can edit any generated prompt before using it
+                - Save good intermediate results to your computer
+                - The app remembers your reference images across tabs
+                - Use Photoshop between iterations for manual corrections
+                - Start with clean bases, add complex elements later
+                
+                ### API Key
+                - Get your API key from x.ai
+                - Set the `XAI_API_KEY` environment variable
+                """)
+            
             # Current project indicator
             with gr.Row():
                 current_project_display = gr.Markdown(f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action")
             
             # API Key configuration
             with gr.Accordion("⚙️ Configuration", open=True):
-                # Check if API key is already set
-                existing_key = os.getenv("XAI_API_KEY")
-                initial_status = "✅ API key loaded from .env file" if existing_key else "Please enter your API key"
-                
-                with gr.Row():
-                    api_key_input = gr.Textbox(
-                        label="Grok API Key (XAI_API_KEY)",
-                        type="password",
-                        placeholder="Enter your Grok API key or set XAI_API_KEY in .env file",
-                        value=existing_key or ""
-                    )
-                
-                api_status = gr.Textbox(label="Status", interactive=False, value=initial_status)
-                
                 # Project name input
                 with gr.Row():
                     project_name_input = gr.Textbox(
@@ -909,12 +988,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                     fn=self.set_project_name,
                     inputs=[project_name_input],
                     outputs=[project_status]
-                )
-                
-                api_key_input.change(
-                    fn=self.initialize_client,
-                    inputs=[api_key_input],
-                    outputs=[api_status]
                 )
             
             # Main workflow tabs
@@ -1052,21 +1125,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                 # Tab 3: Review and Correction
                 with gr.Tab("3️⃣ Review & Correct"):
-                    gr.Markdown("### Interactive Review System (Handles Both Phase 1 & Phase 2)")
-                    gr.Markdown("""
-                    Review images with an AI assistant to create corrected prompts.
-                    
-                    **Phase 1 Mode (default):** Reviews regular FPV POV images
-                    - <IMAGE_0> = Character reference (style/appearance lock)
-                    - <IMAGE_1>+ = Additional characters (if any)
-                    
-                    **Phase 2 Mode (set in Tab 4):** Reviews green-zone enhancements  
-                    - <IMAGE_0> = Character reference (style lock) - ALWAYS the same!
-                    - <IMAGE_1> = Green-zoned base (spatial guide for enhancements)
-                    
-                    💡 The mode is automatically set based on your workflow.
-                    """)
-                    
                     with gr.Row():
                         with gr.Column():
                             gr.Markdown("**Option A: Use generated images**")
@@ -1278,33 +1336,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                 outputs=[unified_status]
             )
             
-            # Instructions footer
-            with gr.Accordion("📖 Instructions", open=False):
-                gr.Markdown("""
-                ### Workflow Overview
-                
-                **Phase 1: Base Image Generation**
-                1. **Generate Prompt**: Upload your character reference and describe the scene
-                2. **Generate Images**: Create 3 (or more) variations using the prompt
-                3. **Review & Correct**: If images have errors, upload them for analysis and get a corrected prompt
-                4. Repeat steps 2-3 until you have a solid base image
-                
-                **Phase 2: Enhancements** (Optional)
-                - For elements that hallucinate (like hair), manually mark zones in an image editor
-                - Generate enhancement prompts for precise additions
-                
-                ### Tips
-                - You can edit any generated prompt before using it
-                - Save good intermediate results to your computer
-                - The app remembers your reference images across tabs
-                - Use Photoshop between iterations for manual corrections
-                - Start with clean bases, add complex elements later
-                
-                ### API Key
-                - Get your API key from x.ai
-                - Either enter it in the Configuration section or set the `XAI_API_KEY` environment variable
-                """)
-        
         return app
 
 
