@@ -489,16 +489,9 @@ class FPVPOVApp:
         # Get the last assistant message
         for user_msg, assistant_msg in reversed(self.phase1_review_history):
             if assistant_msg:
-                # Try to extract prompt from code blocks
-                if "```" in assistant_msg:
-                    parts = assistant_msg.split("```")
-                    for i, part in enumerate(parts):
-                        if i % 2 == 1:  # Odd indices are code blocks
-                            stripped = part.strip()
-                            # Skip language identifiers
-                            if stripped and not stripped.startswith(("python", "javascript", "json", "markdown")):
-                                return stripped
-                return assistant_msg
+                # Use the same cleaning logic as the client
+                from pasokon.grok_client import GrokClient
+                return GrokClient._clean_prompt_text(assistant_msg)
         
         return ""
     
@@ -552,12 +545,12 @@ class FPVPOVApp:
 {enhancement_description}
 
 Context:
-- @image1 is the base image with green/pink zones marking where elements should be added
-- @image2 is the original character reference for style/appearance matching
-- Only add elements inside the marked zones
+- <IMAGE_0> is the character reference for style/appearance matching (SAME as Phase 1)
+- <IMAGE_1> is the base image with green/pink zones marking where elements should be added
+- Only add elements inside the marked zones on <IMAGE_1>
 - Completely erase all green/pink paint afterward
-- Lock everything else to @image1
-- Use @image2 for style/hair/appearance reference
+- Lock appearance/style to <IMAGE_0>
+- Use <IMAGE_1> as the spatial base to modify
 
 Review the failed enhancement attempts and identify what went wrong."""
             
@@ -571,13 +564,14 @@ Review the failed enhancement attempts and identify what went wrong."""
             }
             
             # Get initial review
+            # IMPORTANT: Keep character reference as <IMAGE_0> for consistency with Phase 1
             corrected_response = self.client.review_images(
                 failed_images=images_to_review,
                 original_prompt=self.current_prompt,
                 scene_description=phase2_scene,
-                reference_image=green_base_path,
+                reference_image=char_ref_path,  # <IMAGE_0> = Character reference (consistent!)
                 skill_content=self.review_skill,
-                additional_images=[char_ref_path]
+                additional_images=[green_base_path]  # <IMAGE_1> = Green-marked base
             )
             
             # Initialize chat history
@@ -606,16 +600,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             if self.phase2_review_context:
                 content = []
                 
-                # Add green-zoned base image (@image1)
-                if self.phase2_review_context.get("green_base_path"):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['green_base_path'])}"
-                        }
-                    })
-                
-                # Add character reference (@image2)
+                # Add character reference FIRST (<IMAGE_0>) for consistency with Phase 1
                 if self.phase2_review_context.get("char_ref_path"):
                     content.append({
                         "type": "image_url",
@@ -624,7 +609,16 @@ Review the failed enhancement attempts and identify what went wrong."""
                         }
                     })
                 
-                # Add failed enhancement images
+                # Add green-zoned base image (<IMAGE_1>)
+                if self.phase2_review_context.get("green_base_path"):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['green_base_path'])}"
+                        }
+                    })
+                
+                # Add failed enhancement images (for visual comparison)
                 for img_path in self.phase2_review_context.get("failed_images", []):
                     content.append({
                         "type": "image_url",
@@ -682,16 +676,9 @@ Review the failed enhancement attempts and identify what went wrong."""
         # Get the last assistant message
         for user_msg, assistant_msg in reversed(self.phase2_review_history):
             if assistant_msg:
-                # Try to extract prompt from code blocks
-                if "```" in assistant_msg:
-                    parts = assistant_msg.split("```")
-                    for i, part in enumerate(parts):
-                        if i % 2 == 1:  # Odd indices are code blocks
-                            stripped = part.strip()
-                            # Skip language identifiers
-                            if stripped and not stripped.startswith(("python", "javascript", "json", "markdown")):
-                                return stripped
-                return assistant_msg
+                # Use the same cleaning logic as the client
+                from pasokon.grok_client import GrokClient
+                return GrokClient._clean_prompt_text(assistant_msg)
         
         return ""
     
@@ -705,8 +692,8 @@ Review the failed enhancement attempts and identify what went wrong."""
         """Review failed enhancement images and generate corrected prompt (legacy method).
         
         Args:
-            green_base_image: The base image with green/pink zones (@image1)
-            character_reference: Original character reference (@image2)
+            green_base_image: The base image with green/pink zones (<IMAGE_1>)
+            character_reference: Original character reference (<IMAGE_0>)
             enhancement_description: What was supposed to be added
             failed_enhancement_images: Images that failed to meet requirements
         """
@@ -746,24 +733,24 @@ Review the failed enhancement attempts and identify what went wrong."""
 {enhancement_description}
 
 Context:
-- @image1 is the base image with green/pink zones marking where elements should be added
-- @image2 is the original character reference for style/appearance matching
-- Only add elements inside the marked zones
+- <IMAGE_0> is the character reference for style/appearance matching (SAME as Phase 1)
+- <IMAGE_1> is the base image with green/pink zones marking where elements should be added
+- Only add elements inside the marked zones on <IMAGE_1>
 - Completely erase all green/pink paint afterward
-- Lock everything else to @image1
-- Use @image2 for style/hair/appearance reference
+- Lock appearance/style to <IMAGE_0>
+- Use <IMAGE_1> as the spatial base to modify
 
 Review the failed enhancement attempts and identify what went wrong."""
             
             # Get corrected prompt
-            # Pass green_base as reference_image (@image1), char_ref as additional_images (@image2)
+            # IMPORTANT: Keep character reference as <IMAGE_0> for consistency with Phase 1
             corrected_response = self.client.review_images(
                 failed_images=images_to_review,
                 original_prompt=self.current_prompt,
                 scene_description=phase2_scene,
-                reference_image=green_base_path,  # @image1
+                reference_image=char_ref_path,  # <IMAGE_0> = Character reference (consistent!)
                 skill_content=self.review_skill,
-                additional_images=[char_ref_path]  # @image2
+                additional_images=[green_base_path]  # <IMAGE_1> = Green-marked base
             )
             
             # Extract just the prompt if it's in a code block

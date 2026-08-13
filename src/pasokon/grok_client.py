@@ -69,6 +69,48 @@ class GrokClient:
             print(f"Error listing models: {e}")
             return {"error": str(e)}
         
+    @staticmethod
+    def _clean_prompt_text(text: str) -> str:
+        """Clean markdown formatting from prompt text.
+        
+        Removes:
+        - Markdown code fences (```markdown, ```, etc.)
+        - Language identifiers after opening fences
+        - Surrounding whitespace
+        
+        Args:
+            text: Raw text that may contain markdown formatting.
+            
+        Returns:
+            Cleaned prompt text, or original text if cleaning fails.
+        """
+        try:
+            if not text or not text.strip():
+                return text
+            
+            # Find content between ``` markers
+            if "```" in text:
+                parts = text.split("```")
+                if len(parts) >= 3:
+                    # Extract the code block content (odd indices)
+                    prompt = parts[1].strip()
+                    
+                    # Remove common language identifiers from start of block
+                    language_tags = ["markdown", "text", "prompt", "grok", "imagine"]
+                    first_line = prompt.split("\n")[0].lower().strip()
+                    if first_line in language_tags:
+                        # Remove the first line
+                        prompt = "\n".join(prompt.split("\n")[1:]).strip()
+                    
+                    return prompt
+            
+            # No code fences found, return as-is
+            return text.strip()
+            
+        except Exception:
+            # Fallback: return original text if cleaning fails
+            return text.strip()
+    
     def _encode_image(self, image_path: str) -> str:
         """Encode an image to base64.
         
@@ -166,14 +208,9 @@ class GrokClient:
                     f"Check if the model name is correct and your API key has access to vision models."
                 )
             
-            # Extract the prompt from the code block
+            # Extract and clean the prompt
             full_response = result["choices"][0]["message"]["content"]
-            # Find content between ``` markers
-            if "```" in full_response:
-                parts = full_response.split("```")
-                if len(parts) >= 3:
-                    return parts[1].strip()
-            return full_response.strip()
+            return self._clean_prompt_text(full_response)
     
     def generate_images(
         self,
@@ -358,12 +395,36 @@ class GrokClient:
             Corrected prompt for Grok Imagine.
         """
         # Prepare the messages with all images
+        # IMPORTANT: Character reference MUST be <IMAGE_0> for consistency with initial prompt generation
         content = [
             {"type": "text", "text": skill_content},
-            {"type": "text", "text": "\n\nFailed generated images:"}
+            {"type": "text", "text": "\n\nCharacter reference (<IMAGE_0>):"}
         ]
         
-        # Add failed images
+        # Add character reference FIRST (becomes <IMAGE_0>)
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"
+            }
+        })
+        
+        # Add additional images if provided (become <IMAGE_1>, <IMAGE_2>, etc.)
+        if additional_images:
+            for idx, img_path in enumerate(additional_images, start=1):
+                content.append({
+                    "type": "text",
+                    "text": f"\n\nAdditional reference (<IMAGE_{idx}>):"
+                })
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
+                    }
+                })
+        
+        # Add failed images AFTER references (for visual comparison only, not referenced by index)
+        content.append({"type": "text", "text": "\n\nFailed generated images (for diagnosis):"})
         for img_path in failed_images:
             content.append({
                 "type": "image_url",
@@ -381,29 +442,6 @@ class GrokClient:
             "type": "text",
             "text": f"\n\nOriginal scene description:\n{scene_description}"
         })
-        
-        # Add character reference
-        content.append({"type": "text", "text": "\n\nCharacter reference (@image1):"})
-        content.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"
-            }
-        })
-        
-        # Add additional images if provided
-        if additional_images:
-            for idx, img_path in enumerate(additional_images, start=2):
-                content.append({
-                    "type": "text",
-                    "text": f"\n\nAdditional reference (@image{idx}):"
-                })
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
-                    }
-                })
         
         with httpx.Client(timeout=60.0) as client:
             payload = {
@@ -444,14 +482,6 @@ class GrokClient:
                     f"Check if the model name is correct and your API key has access to vision models."
                 )
             
-            # Extract the corrected prompt
+            # Extract the corrected prompt - clean it for immediate use
             full_response = result["choices"][0]["message"]["content"]
-            # Find content between ``` markers (skip the blurb)
-            if "```" in full_response:
-                parts = full_response.split("```")
-                if len(parts) >= 3:
-                    # Return both blurb and corrected prompt
-                    blurb = parts[0].strip()
-                    corrected_prompt = parts[1].strip()
-                    return f"{blurb}\n\n```\n{corrected_prompt}\n```"
-            return full_response.strip()
+            return self._clean_prompt_text(full_response)
