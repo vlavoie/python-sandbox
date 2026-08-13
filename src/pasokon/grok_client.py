@@ -215,6 +215,12 @@ class GrokClient:
         print(f"\n🎨 Generating {num_images} images in parallel...")
         print(f"   Model: {self.image_model}")
         print(f"   Aspect ratio: {aspect_ratio}")
+        print(f"   Reference images being sent: {len(image_urls)}")
+        print(f"   Prompt length: {len(prompt)} characters")
+        if len(image_urls) > 0:
+            print(f"   ✅ Reference image (@image1) IS being sent to the API")
+        if len(image_urls) > 1:
+            print(f"   ✅ {len(image_urls) - 1} additional image(s) (@image2, @image3...) being sent")
         
         def generate_single_image(index: int) -> tuple[int, bytes]:
             """Generate a single image (for parallel execution)."""

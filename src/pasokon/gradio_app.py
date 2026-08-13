@@ -38,6 +38,12 @@ class FPVPOVApp:
         self.iteration_count = 0
         self.project_name = "untitled-project"
         
+        # Review chat histories
+        self.phase1_review_history = []
+        self.phase2_review_history = []
+        self.phase1_review_context = {}
+        self.phase2_review_context = {}
+        
         # Model lists
         self.available_chat_models = []
         self.available_image_models = []
@@ -344,34 +350,41 @@ class FPVPOVApp:
         except Exception as e:
             return f"❌ Error generating images: {str(e)}", []
     
-    def review_and_correct(
+    def start_phase1_review(
         self,
         manual_uploaded_images: Optional[List] = None
-    ) -> Tuple[str, str]:
-        """Review failed images and generate corrected prompt."""
+    ) -> Tuple[List, str]:
+        """Start an interactive review conversation for Phase 1."""
         if not self.client:
-            return "❌ Please configure your API key first.", ""
+            return [], "❌ Please configure your API key first."
         
         # Determine which images to review
         images_to_review = []
         
         if manual_uploaded_images:
-            # User uploaded specific failed images
             for img in manual_uploaded_images:
                 if img is not None:
                     path = self.save_uploaded_file(img)
                     if path:
                         images_to_review.append(path)
         elif self.generated_images:
-            # Use all generated images from previous generation
             images_to_review = self.generated_images
         
         if not images_to_review:
-            return "❌ No images to review. Please generate or upload images first.", ""
+            return [], "❌ No images to review. Please generate or upload images first."
         
         try:
-            # Get corrected prompt
-            corrected_response = self.client.review_images(
+            # Store context for this review session
+            self.phase1_review_context = {
+                "failed_images": images_to_review,
+                "original_prompt": self.current_prompt,
+                "scene_description": self.current_scene,
+                "reference_image": self.reference_image_path,
+                "additional_images": self.additional_images_paths
+            }
+            
+            # Get initial review
+            initial_review = self.client.review_images(
                 failed_images=images_to_review,
                 original_prompt=self.current_prompt,
                 scene_description=self.current_scene,
@@ -380,20 +393,304 @@ class FPVPOVApp:
                 additional_images=self.additional_images_paths if self.additional_images_paths else None
             )
             
-            # Extract just the prompt if it's in a code block
-            if "```" in corrected_response:
-                parts = corrected_response.split("```")
-                if len(parts) >= 3:
-                    corrected_prompt = parts[1].strip()
-                else:
-                    corrected_prompt = corrected_response
-            else:
-                corrected_prompt = corrected_response
+            # Initialize chat history
+            self.phase1_review_history = [
+                ("Please review these failed images and suggest corrections.", initial_review)
+            ]
             
-            return "✅ Review complete! Corrected prompt generated.", corrected_prompt
+            return self.phase1_review_history, "✅ Review started! You can now ask questions or request changes."
             
         except Exception as e:
-            return f"❌ Error during review: {str(e)}", ""
+            return [], f"❌ Error during review: {str(e)}"
+    
+    def continue_phase1_review(self, user_message: str, history: List) -> Tuple[List, str]:
+        """Continue the Phase 1 review conversation."""
+        if not self.client:
+            return history, "❌ Client not initialized"
+        
+        if not user_message.strip():
+            return history, ""
+        
+        try:
+            # Build conversation context with images
+            messages = [{"role": "system", "content": self.review_skill}]
+            
+            # Add image context to first message
+            if self.phase1_review_context:
+                content = []
+                
+                # Add reference image
+                if self.phase1_review_context.get("reference_image"):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase1_review_context['reference_image'])}"
+                        }
+                    })
+                
+                # Add failed images
+                for img_path in self.phase1_review_context.get("failed_images", []):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"
+                        }
+                    })
+                
+                content.append({
+                    "type": "text",
+                    "text": f"Original prompt: {self.phase1_review_context.get('original_prompt', '')}\n\nScene: {self.phase1_review_context.get('scene_description', '')}"
+                })
+                
+                messages.append({"role": "user", "content": content})
+            
+            # Add conversation history
+            for user_msg, assistant_msg in history:
+                if user_msg != "Please review these failed images and suggest corrections.":
+                    messages.append({"role": "user", "content": user_msg})
+                if assistant_msg:
+                    messages.append({"role": "assistant", "content": assistant_msg})
+            
+            # Add new user message
+            messages.append({"role": "user", "content": user_message})
+            
+            # Get response
+            import httpx
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    f"{self.client.base_url}/chat/completions",
+                    headers=self.client.headers,
+                    json={
+                        "model": self.client.chat_model,
+                        "messages": messages
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                assistant_response = result["choices"][0]["message"]["content"]
+            
+            # Update history
+            new_history = history + [(user_message, assistant_response)]
+            self.phase1_review_history = new_history
+            
+            return new_history, ""
+            
+        except Exception as e:
+            return history, f"❌ Error: {str(e)}"
+    
+    def extract_prompt_from_phase1_chat(self) -> str:
+        """Extract the final prompt from the Phase 1 review chat."""
+        if not self.phase1_review_history:
+            return ""
+        
+        # Get the last assistant message
+        for user_msg, assistant_msg in reversed(self.phase1_review_history):
+            if assistant_msg:
+                # Try to extract prompt from code blocks
+                if "```" in assistant_msg:
+                    parts = assistant_msg.split("```")
+                    for i, part in enumerate(parts):
+                        if i % 2 == 1:  # Odd indices are code blocks
+                            stripped = part.strip()
+                            # Skip language identifiers
+                            if stripped and not stripped.startswith(("python", "javascript", "json", "markdown")):
+                                return stripped
+                return assistant_msg
+        
+        return ""
+    
+    def start_phase2_review(
+        self,
+        green_base_image,
+        enhancement_description: str,
+        failed_enhancement_images: Optional[List] = None
+    ) -> Tuple[List, str]:
+        """Start an interactive review conversation for Phase 2 enhancements.
+        
+        Args:
+            green_base_image: The base image with green/pink zones (@image1)
+            enhancement_description: What was supposed to be added
+            failed_enhancement_images: Images that failed to meet requirements
+        """
+        if not self.client:
+            return [], "❌ Please configure your API key first."
+        
+        if not green_base_image:
+            return [], "❌ Please upload the green-zoned base image."
+        
+        if not self.reference_image_path:
+            return [], "❌ No character reference found. Please upload a character reference in Tab 1 first."
+        
+        if not enhancement_description.strip():
+            return [], "❌ Please provide enhancement description."
+        
+        # Save the base image
+        green_base_path = self.save_uploaded_file(green_base_image)
+        # Use character reference from Phase 1
+        char_ref_path = self.reference_image_path
+        
+        # Get failed images to review
+        images_to_review = []
+        if failed_enhancement_images:
+            for img in failed_enhancement_images:
+                if img is not None:
+                    path = self.save_uploaded_file(img)
+                    if path:
+                        images_to_review.append(path)
+        elif self.generated_images:
+            images_to_review = self.generated_images
+        
+        if not images_to_review:
+            return [], "❌ No enhancement images to review. Please generate or upload images first."
+        
+        try:
+            # Store context for this review session
+            phase2_scene = f"""Phase 2 Enhancement Review - Green Zone Addition:
+{enhancement_description}
+
+Context:
+- @image1 is the base image with green/pink zones marking where elements should be added
+- @image2 is the original character reference for style/appearance matching
+- Only add elements inside the marked zones
+- Completely erase all green/pink paint afterward
+- Lock everything else to @image1
+- Use @image2 for style/hair/appearance reference
+
+Review the failed enhancement attempts and identify what went wrong."""
+            
+            self.phase2_review_context = {
+                "green_base_path": green_base_path,
+                "char_ref_path": char_ref_path,
+                "failed_images": images_to_review,
+                "original_prompt": self.current_prompt,
+                "phase2_scene": phase2_scene,
+                "enhancement_description": enhancement_description
+            }
+            
+            # Get initial review
+            corrected_response = self.client.review_images(
+                failed_images=images_to_review,
+                original_prompt=self.current_prompt,
+                scene_description=phase2_scene,
+                reference_image=green_base_path,
+                skill_content=self.review_skill,
+                additional_images=[char_ref_path]
+            )
+            
+            # Initialize chat history
+            self.phase2_review_history = [
+                ("Please review these failed enhancement attempts and suggest corrections.", corrected_response)
+            ]
+            
+            return self.phase2_review_history, "✅ Enhancement review started! You can now ask questions or request changes."
+            
+        except Exception as e:
+            return [], f"❌ Error during enhancement review: {str(e)}"
+    
+    def continue_phase2_review(self, user_message: str, history: List) -> Tuple[List, str]:
+        """Continue the Phase 2 enhancement review conversation."""
+        if not self.client:
+            return history, "❌ Client not initialized"
+        
+        if not user_message.strip():
+            return history, ""
+        
+        try:
+            # Build conversation context with images
+            messages = [{"role": "system", "content": self.review_skill}]
+            
+            # Add image context to first message
+            if self.phase2_review_context:
+                content = []
+                
+                # Add green-zoned base image (@image1)
+                if self.phase2_review_context.get("green_base_path"):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['green_base_path'])}"
+                        }
+                    })
+                
+                # Add character reference (@image2)
+                if self.phase2_review_context.get("char_ref_path"):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase2_review_context['char_ref_path'])}"
+                        }
+                    })
+                
+                # Add failed enhancement images
+                for img_path in self.phase2_review_context.get("failed_images", []):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"
+                        }
+                    })
+                
+                content.append({
+                    "type": "text",
+                    "text": f"{self.phase2_review_context.get('phase2_scene', '')}\\n\\nOriginal prompt: {self.phase2_review_context.get('original_prompt', '')}"
+                })
+                
+                messages.append({"role": "user", "content": content})
+            
+            # Add conversation history
+            for user_msg, assistant_msg in history:
+                if user_msg != "Please review these failed enhancement attempts and suggest corrections.":
+                    messages.append({"role": "user", "content": user_msg})
+                if assistant_msg:
+                    messages.append({"role": "assistant", "content": assistant_msg})
+            
+            # Add new user message
+            messages.append({"role": "user", "content": user_message})
+            
+            # Get response
+            import httpx
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    f"{self.client.base_url}/chat/completions",
+                    headers=self.client.headers,
+                    json={
+                        "model": self.client.chat_model,
+                        "messages": messages
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                assistant_response = result["choices"][0]["message"]["content"]
+            
+            # Update history
+            new_history = history + [(user_message, assistant_response)]
+            self.phase2_review_history = new_history
+            
+            return new_history, ""
+            
+        except Exception as e:
+            return history, f"❌ Error: {str(e)}"
+    
+    def extract_prompt_from_phase2_chat(self) -> str:
+        """Extract the final prompt from the Phase 2 review chat."""
+        if not self.phase2_review_history:
+            return ""
+        
+        # Get the last assistant message
+        for user_msg, assistant_msg in reversed(self.phase2_review_history):
+            if assistant_msg:
+                # Try to extract prompt from code blocks
+                if "```" in assistant_msg:
+                    parts = assistant_msg.split("```")
+                    for i, part in enumerate(parts):
+                        if i % 2 == 1:  # Odd indices are code blocks
+                            stripped = part.strip()
+                            # Skip language identifiers
+                            if stripped and not stripped.startswith(("python", "javascript", "json", "markdown")):
+                                return stripped
+                return assistant_msg
+        
+        return ""
     
     def review_enhancement(
         self,
@@ -402,7 +699,7 @@ class FPVPOVApp:
         enhancement_description: str,
         failed_enhancement_images: Optional[List] = None
     ) -> Tuple[str, str]:
-        """Review failed enhancement images and generate corrected prompt.
+        """Review failed enhancement images and generate corrected prompt (legacy method).
         
         Args:
             green_base_image: The base image with green/pink zones (@image1)
@@ -661,7 +958,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                 
                 # Tab 3: Review and Correction
                 with gr.Tab("3️⃣ Review & Correct"):
-                    gr.Markdown("### Review generated images and get corrected prompt")
+                    gr.Markdown("### Interactive review with the reviewer skill")
+                    gr.Markdown("Have a conversation with the reviewer to refine your prompt!")
                     
                     with gr.Row():
                         with gr.Column():
@@ -676,21 +974,63 @@ Review the failed enhancement attempts and identify what went wrong."""
                                 type="filepath"
                             )
                     
-                    review_btn = gr.Button("🔍 Review & Generate Corrected Prompt", variant="primary")
+                    start_review_btn = gr.Button("🔍 Start Review", variant="primary")
                     review_status = gr.Textbox(label="Status", interactive=False)
+                    
+                    # Chatbot interface for interactive review
+                    review_chatbot = gr.Chatbot(
+                        label="Review Conversation",
+                        height=400
+                    )
+                    
+                    with gr.Row():
+                        review_user_input = gr.Textbox(
+                            label="Your message",
+                            placeholder="Ask questions or request changes (e.g., 'Can you explain why you changed the lighting?', 'Keep the original pose but fix the hands')",
+                            lines=2
+                        )
+                        send_review_btn = gr.Button("Send", variant="secondary")
+                    
+                    gr.Markdown("---")
+                    gr.Markdown("**When you're satisfied with the conversation, extract the final prompt:**")
+                    
+                    extract_prompt_btn = gr.Button("📄 Extract Final Prompt from Conversation")
                     corrected_prompt = gr.Textbox(
-                        label="Corrected Prompt",
-                        lines=15,
+                        label="Final Corrected Prompt",
+                        lines=10,
                         interactive=True
                     )
                     
                     gr.Markdown("**Use this corrected prompt in Tab 2 to regenerate images**")
                     copy_to_gen_btn = gr.Button("📋 Copy to Generation Tab")
                     
-                    review_btn.click(
-                        fn=self.review_and_correct,
+                    # Event handlers
+                    start_review_btn.click(
+                        fn=self.start_phase1_review,
                         inputs=[failed_images_upload],
-                        outputs=[review_status, corrected_prompt]
+                        outputs=[review_chatbot, review_status]
+                    )
+                    
+                    def send_message(msg, history):
+                        if not msg.strip():
+                            return history, "", ""
+                        return self.continue_phase1_review(msg, history)[0], "", ""
+                    
+                    send_review_btn.click(
+                        fn=send_message,
+                        inputs=[review_user_input, review_chatbot],
+                        outputs=[review_chatbot, review_user_input, review_status]
+                    )
+                    
+                    review_user_input.submit(
+                        fn=send_message,
+                        inputs=[review_user_input, review_chatbot],
+                        outputs=[review_chatbot, review_user_input, review_status]
+                    )
+                    
+                    extract_prompt_btn.click(
+                        fn=self.extract_prompt_from_phase1_chat,
+                        outputs=[corrected_prompt]
                     )
                     
                     copy_to_gen_btn.click(
@@ -708,19 +1048,14 @@ Review the failed enhancement attempts and identify what went wrong."""
                     **Workflow:**
                     1. Take your best base image from Phase 1
                     2. Mark green zones in Photoshop/GIMP where you want elements added
-                    3. Upload the green-marked base as @image1
-                    4. Upload original character reference as @image2
-                    5. Describe what to add in the green zones
+                    3. Upload the green-marked base as @image1 (character reference from Tab 1 will be used as @image2)
+                    4. Describe what to add in the green zones
                     """)
                     
                     with gr.Row():
                         with gr.Column():
                             green_base_image = gr.Image(
                                 label="Green-Marked Base Image (@image1)",
-                                type="filepath"
-                            )
-                            original_char_ref = gr.Image(
-                                label="Original Character Reference (@image2)",
                                 type="filepath"
                             )
                         
@@ -741,31 +1076,27 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                     # This uses the same prompt generation logic but with phase 2 context
                     enhance_prompt_btn.click(
-                        fn=lambda base, ref, desc: self.generate_initial_prompt(
+                        fn=lambda base, desc: self.generate_initial_prompt(
                             base,
                             f"Phase 2 Enhancement - Green Zone Addition:\n{desc}\n\nOnly add elements inside the green zones. Completely erase all green paint afterward. Lock everything else to @image1. Use @image2 for style/hair lock.",
-                            [ref] if ref else None
+                            [self.reference_image_path] if self.reference_image_path else None
                         ),
-                        inputs=[green_base_image, original_char_ref, enhancement_description],
+                        inputs=[green_base_image, enhancement_description],
                         outputs=[enhance_status, enhancement_prompt]
                     )
                     
                     gr.Markdown("---")
-                    gr.Markdown("### 🔍 Review Enhancement Attempts")
+                    gr.Markdown("### 🔍 Interactive Enhancement Review")
                     gr.Markdown("""
-                    After generating enhanced images in Tab 2, review them here to identify problems and get a corrected prompt.
+                    After generating enhanced images in Tab 2, review them here with an interactive conversation.
                     
-                    **Upload the same green-zoned base and character reference used above, plus the failed enhancement attempts.**
+                    **Upload the green-zoned base (character reference from Tab 1 will be used automatically).**
                     """)
                     
                     with gr.Row():
                         with gr.Column():
                             review_green_base = gr.Image(
                                 label="Green-Zoned Base Image (@image1)",
-                                type="filepath"
-                            )
-                            review_char_ref = gr.Image(
-                                label="Character Reference (@image2)",
                                 type="filepath"
                             )
                         
@@ -781,21 +1112,63 @@ Review the failed enhancement attempts and identify what went wrong."""
                                 type="filepath"
                             )
                     
-                    review_enhance_btn = gr.Button("🔍 Review & Generate Corrected Enhancement Prompt", variant="primary")
+                    start_enhance_review_btn = gr.Button("🔍 Start Enhancement Review", variant="primary")
                     review_enhance_status = gr.Textbox(label="Review Status", interactive=False)
+                    
+                    # Chatbot interface for interactive enhancement review
+                    enhance_review_chatbot = gr.Chatbot(
+                        label="Enhancement Review Conversation",
+                        height=400
+                    )
+                    
+                    with gr.Row():
+                        enhance_review_user_input = gr.Textbox(
+                            label="Your message",
+                            placeholder="Ask questions or request changes (e.g., 'Why didn't the hair match the reference?', 'Try keeping more of the original lighting')",
+                            lines=2
+                        )
+                        send_enhance_review_btn = gr.Button("Send", variant="secondary")
+                    
+                    gr.Markdown("---")
+                    gr.Markdown("**When you're satisfied with the conversation, extract the final prompt:**")
+                    
+                    extract_enhance_prompt_btn = gr.Button("📄 Extract Final Enhancement Prompt from Conversation")
                     corrected_enhancement_prompt = gr.Textbox(
-                        label="Corrected Enhancement Prompt",
-                        lines=15,
+                        label="Final Corrected Enhancement Prompt",
+                        lines=10,
                         interactive=True
                     )
                     
                     gr.Markdown("**Copy this corrected prompt to Tab 2 to regenerate enhanced images**")
                     copy_enhance_to_gen_btn = gr.Button("📋 Copy to Generation Tab")
                     
-                    review_enhance_btn.click(
-                        fn=self.review_enhancement,
-                        inputs=[review_green_base, review_char_ref, review_enhancement_desc, failed_enhancements],
-                        outputs=[review_enhance_status, corrected_enhancement_prompt]
+                    # Event handlers for Phase 2 review
+                    start_enhance_review_btn.click(
+                        fn=self.start_phase2_review,
+                        inputs=[review_green_base, review_enhancement_desc, failed_enhancements],
+                        outputs=[enhance_review_chatbot, review_enhance_status]
+                    )
+                    
+                    def send_enhance_message(msg, history):
+                        if not msg.strip():
+                            return history, "", ""
+                        return self.continue_phase2_review(msg, history)[0], "", ""
+                    
+                    send_enhance_review_btn.click(
+                        fn=send_enhance_message,
+                        inputs=[enhance_review_user_input, enhance_review_chatbot],
+                        outputs=[enhance_review_chatbot, enhance_review_user_input, review_enhance_status]
+                    )
+                    
+                    enhance_review_user_input.submit(
+                        fn=send_enhance_message,
+                        inputs=[enhance_review_user_input, enhance_review_chatbot],
+                        outputs=[enhance_review_chatbot, enhance_review_user_input, review_enhance_status]
+                    )
+                    
+                    extract_enhance_prompt_btn.click(
+                        fn=self.extract_prompt_from_phase2_chat,
+                        outputs=[corrected_enhancement_prompt]
                     )
                     
                     copy_enhance_to_gen_btn.click(
