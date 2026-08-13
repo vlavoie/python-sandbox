@@ -38,13 +38,33 @@ class GrokClient:
         self.base_url = base_url or os.getenv("XAI_API_BASE_URL", "https://api.x.ai/v1")
         
         # Model names - can be overridden via environment variables
-        self.chat_model = os.getenv("XAI_CHAT_MODEL", "grok-2-vision-1212")
-        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-2-image-1212")
+        # Current Grok 4.20 models support vision (images)
+        # Run 'poetry run python list_models.py' to see all available models
+        self.chat_model = os.getenv("XAI_CHAT_MODEL", "grok-4.20")
+        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-4.20")
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+    
+    def list_models(self) -> dict:
+        """List available models from the API.
+        
+        Returns:
+            Dictionary containing available models.
+        """
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(
+                    f"{self.base_url}/models",
+                    headers=self.headers
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            print(f"Error listing models: {e}")
+            return {"error": str(e)}
         
     def _encode_image(self, image_path: str) -> str:
         """Encode an image to base64.

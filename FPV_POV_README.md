@@ -24,11 +24,26 @@ pip install -e .
 
 1. Sign up at [x.ai](https://x.ai)
 2. Generate an API key
-3. Either:
-   - Set the environment variable: `export XAI_API_KEY=your-api-key-here`
-   - Or enter it in the app's Configuration section
+3. Add it to your `.env` file:
+   ```bash
+   XAI_API_KEY=your-api-key-here
+   ```
 
-### 3. Prepare Your Skills
+### 3. Verify Model Access
+
+The app uses `grok-4.20` by default, which supports vision (images). To see all available models:
+
+```bash
+poetry run python list_models.py
+```
+
+If you need to use a different model, add to your `.env`:
+```bash
+XAI_CHAT_MODEL=grok-4.20
+XAI_IMAGE_MODEL=grok-4.20
+```
+
+### 4. Prepare Your Skills
 
 Make sure you have:
 - `fpv-pov-image.md` - Your prompt engineering skill
@@ -153,6 +168,15 @@ If you get encoding errors on Windows (especially with emojis or special charact
    - Set environment variable: `set PYTHONUTF8=1`
 
 ### API Errors
+
+**"Model not found"** or **"Model not available"**
+- The model name is incorrect or your API key doesn't have access
+- Run `poetry run python list_models.py` to see available models
+- Update your `.env` file with a valid model name:
+  ```bash
+  XAI_CHAT_MODEL=grok-4.20
+  XAI_IMAGE_MODEL=grok-4.20
+  ```
 
 ### "API key not configured"
 - Make sure you've either set `XAI_API_KEY` environment variable or entered the key in the Configuration section
