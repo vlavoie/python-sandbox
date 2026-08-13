@@ -31,16 +31,17 @@ pip install -e .
 
 ### 3. Verify Model Access
 
-The app uses `grok-4.20` by default, which supports vision (images). To see all available models:
+When you launch the app, it will automatically fetch available models from the Grok API and populate dropdown menus for selection.
 
+**Available models are shown in the Configuration section:**
+- **Chat Model**: Used for prompt generation and image review (e.g., `grok-4.20`)
+- **Image Generation Model**: Used for creating images (e.g., `grok-imagine-image-2.0`)
+
+You can change models at any time using the dropdowns in the Configuration panel.
+
+To manually check available models:
 ```bash
 poetry run python list_models.py
-```
-
-If you need to use a different model, add to your `.env`:
-```bash
-XAI_CHAT_MODEL=grok-4.20
-XAI_IMAGE_MODEL=grok-4.20
 ```
 
 ### 4. Prepare Your Skills
@@ -75,6 +76,7 @@ The Gradio interface will open in your browser at `http://127.0.0.1:7860`
 2. **Tab 2 - Generate Images**
    - The prompt is automatically copied from Tab 1
    - Choose how many images to generate (default: 3)
+   - Select aspect ratio (default: 16:9, options: 1:1, 16:9, 9:16, 4:3, 3:4, 21:9)
    - Click "Generate Images"
    - Review the results
 

@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 from dataclasses import dataclass
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,7 +43,8 @@ class GrokClient:
         # Current Grok 4.20 models support vision (images)
         # Run 'poetry run python list_models.py' to see all available models
         self.chat_model = os.getenv("XAI_CHAT_MODEL", "grok-4.20")
-        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-4.20")
+        # Image generation models: grok-imagine-image, grok-imagine-image-2.0, grok-imagine-image-quality
+        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-imagine-image-2.0")
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -177,7 +180,8 @@ class GrokClient:
         prompt: str,
         reference_image: str,
         num_images: int = 3,
-        additional_images: Optional[List[str]] = None
+        additional_images: Optional[List[str]] = None,
+        aspect_ratio: str = "16:9"
     ) -> List[bytes]:
         """Generate images using Grok Imagine API.
         
@@ -186,6 +190,8 @@ class GrokClient:
             reference_image: Path to the character reference image.
             num_images: Number of images to generate (default: 3).
             additional_images: Optional list of additional reference images.
+            aspect_ratio: Aspect ratio for the generated images (default: "16:9").
+                         Common ratios: "1:1", "16:9", "9:16", "4:3", "3:4", "21:9"
             
         Returns:
             List of generated image data as bytes.
@@ -198,21 +204,25 @@ class GrokClient:
             for img_path in additional_images:
                 image_urls.append(f"data:image/jpeg;base64,{self._encode_image(img_path)}")
         
-        with httpx.Client(timeout=120.0) as client:
-            for i in range(num_images):
-                payload = {
-                    "model": self.image_model,
-                    "prompt": prompt,
-                    "images": image_urls,
-                    "n": 1,
-                    "size": "1024x1024",
-                    "response_format": "b64_json"
-                }
-                
-                print(f"DEBUG: Generating image {i+1}/{num_images}")
-                print(f"DEBUG: Model: {self.image_model}")
-                
+        payload = {
+            "model": self.image_model,
+            "prompt": prompt,
+            "images": image_urls,
+            "n": 1,
+            "aspect_ratio": aspect_ratio
+        }
+        
+        print(f"\n🎨 Generating {num_images} images in parallel...")
+        print(f"   Model: {self.image_model}")
+        print(f"   Aspect ratio: {aspect_ratio}")
+        
+        def generate_single_image(index: int) -> tuple[int, bytes]:
+            """Generate a single image (for parallel execution)."""
+            with httpx.Client(timeout=90.0) as client:
                 try:
+                    start_time = time.time()
+                    print(f"   🚀 Starting image {index + 1}/{num_images}...")
+                    
                     response = client.post(
                         f"{self.base_url}/images/generations",
                         headers=self.headers,
@@ -220,11 +230,36 @@ class GrokClient:
                     )
                     response.raise_for_status()
                     result = response.json()
+                    
+                    api_time = time.time() - start_time
+                    
+                    # Grok returns image URLs, not base64
+                    if "data" in result and len(result["data"]) > 0:
+                        image_url = result["data"][0].get("url")
+                        if image_url:
+                            # Download the image
+                            img_response = client.get(image_url)
+                            img_response.raise_for_status()
+                            image_data = img_response.content
+                            
+                            total_time = time.time() - start_time
+                            print(f"   ✅ Image {index + 1}/{num_images} complete ({total_time:.1f}s)")
+                            return (index, image_data)
+                        else:
+                            raise Exception("No image URL in response")
+                    else:
+                        raise Exception("Unexpected response format")
+                
+                except httpx.TimeoutException:
+                    print(f"\n❌ Timeout generating image {index + 1}/{num_images}")
+                    raise Exception(
+                        f"Image {index + 1} generation timed out after 90 seconds.\n"
+                        f"The Grok Imagine API might be slow or overloaded. Try again in a few minutes."
+                    )
                 except httpx.HTTPStatusError as e:
                     error_detail = e.response.text
-                    print(f"\n❌ Image Generation Error: {e.response.status_code}")
+                    print(f"\n❌ Image {index + 1} Generation Error: {e.response.status_code}")
                     print(f"❌ Response: {error_detail}")
-                    print(f"❌ Model used: {self.image_model}")
                     try:
                         error_json = e.response.json()
                         print(f"❌ Error details: {error_json}")
@@ -232,15 +267,33 @@ class GrokClient:
                         pass
                     raise Exception(
                         f"Grok Image API Error ({e.response.status_code}): {error_detail}\n\n"
-                        f"Model: {self.image_model}\n"
+                        f"Model: {self.image_model}"
+                    )
+        
+        # Generate all images in parallel
+        overall_start = time.time()
+        images = [None] * num_images  # Pre-allocate list to maintain order
+        
+        with ThreadPoolExecutor(max_workers=num_images) as executor:
+            # Submit all tasks
+            future_to_index = {executor.submit(generate_single_image, i): i for i in range(num_images)}
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_index):
+                try:
+                    index, image_data = future.result()
+                    images[index] = image_data
+                except Exception as e:
+                    # Re-raise the first error we encounter
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise e
+        
+        overall_time = time.time() - overall_start
+        print(f"\n✨ All {num_images} images generated in {overall_time:.1f}s (avg {overall_time/num_images:.1f}s per image)\n"    f"Model: {self.image_model}\n"
                         f"Check if the model name is correct and your API key has access to image generation."
                     )
-                
-                # Decode the base64 image
-                image_b64 = result["data"][0]["b64_json"]
-                image_data = base64.b64decode(image_b64)
-                images.append(image_data)
         
+        return images
         return images
     
     def review_images(

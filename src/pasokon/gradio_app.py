@@ -9,6 +9,7 @@ from PIL import Image
 import io
 import os
 import sys
+from datetime import datetime
 from dotenv import load_dotenv
 
 from .grok_client import GrokClient
@@ -35,6 +36,16 @@ class FPVPOVApp:
         self.additional_images_paths = []
         self.generated_images = []
         self.iteration_count = 0
+        self.project_name = "untitled-project"
+        
+        # Model lists
+        self.available_chat_models = []
+        self.available_image_models = []
+        self.all_models = []
+        
+        # Output directory for saved images
+        self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
+        self.output_dir.mkdir(exist_ok=True)
         
         # Load skill files with explicit UTF-8 encoding
         self.skill_dir = Path(__file__).parent.parent.parent
@@ -55,9 +66,88 @@ class FPVPOVApp:
         """Initialize the Grok client with API key."""
         try:
             self.client = GrokClient(api_key=api_key)
+            
+            # Fetch available models
+            self.fetch_models()
+            
             return "✅ API key configured successfully!"
         except Exception as e:
             return f"❌ Error: {str(e)}"
+    
+    def fetch_models(self) -> Tuple[List[str], List[str]]:
+        """Fetch available models from the API and categorize them.
+        
+        Returns:
+            Tuple of (chat_models, image_models)
+        """
+        if not self.client:
+            return [], []
+        
+        try:
+            models_data = self.client.list_models()
+            
+            if "data" in models_data:
+                self.all_models = []
+                chat_models = []
+                image_models = []
+                
+                for model in models_data.get("data", []):
+                    if isinstance(model, dict) and "id" in model:
+                        model_id = model["id"]
+                        self.all_models.append(model_id)
+                        
+                        # Categorize models
+                        if "imagine" in model_id.lower() or "image" in model_id.lower():
+                            image_models.append(model_id)
+                        else:
+                            chat_models.append(model_id)
+                
+                self.available_chat_models = chat_models if chat_models else ["grok-4.20"]
+                self.available_image_models = image_models if image_models else ["grok-imagine-image-2.0"]
+                
+                print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
+                return chat_models, image_models
+            else:
+                # Fallback to defaults
+                self.available_chat_models = ["grok-4.20"]
+                self.available_image_models = ["grok-imagine-image-2.0"]
+                return self.available_chat_models, self.available_image_models
+                
+        except Exception as e:
+            print(f"⚠️ Could not fetch models: {e}")
+            # Fallback to defaults
+            self.available_chat_models = ["grok-4.20"]
+            self.available_image_models = ["grok-imagine-image-2.0"]
+            return self.available_chat_models, self.available_image_models
+    
+    def update_chat_model(self, model_name: str) -> str:
+        """Update the chat model used by the client."""
+        if self.client:
+            self.client.chat_model = model_name
+            return f"✅ Chat model updated to: {model_name}"
+        return "❌ Client not initialized"
+    
+    def update_image_model(self, model_name: str) -> str:
+        """Update the image model used by the client."""
+        if self.client:
+            self.client.image_model = model_name
+            return f"✅ Image model updated to: {model_name}"
+        return "❌ Client not initialized"
+    
+    def set_project_name(self, project_name: str) -> str:
+        """Set the project name and reset iteration count."""
+        if not project_name or not project_name.strip():
+            return "❌ Project name cannot be empty"
+        
+        # Sanitize project name (remove special characters)
+        sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
+        sanitized = sanitized.strip().replace(' ', '-').lower()
+        
+        if sanitized != self.project_name:
+            self.project_name = sanitized
+            self.iteration_count = 0
+            return f"✅ Project set to: {sanitized} (Iteration counter reset)"
+        return f"📁 Project: {sanitized}"
     
     def save_uploaded_file(self, file) -> Optional[str]:
         """Save an uploaded file to a temporary location."""
@@ -128,10 +218,58 @@ class FPVPOVApp:
             print(f"{'='*60}\n")
             return f"❌ Error generating prompt: {error_msg}", ""
     
+    def save_images_permanently(
+        self,
+        image_data_list: List[bytes],
+        prompt: str,
+        iteration: int,
+        aspect_ratio: str
+    ) -> Path:
+        """Save generated images to permanent output directory.
+        
+        Args:
+            image_data_list: List of image data as bytes
+            prompt: The prompt used to generate images
+            iteration: Iteration number
+            aspect_ratio: Aspect ratio used
+            
+        Returns:
+            Path to the output directory
+        """
+        # Create project folder
+        project_dir = self.output_dir / self.project_name
+        project_dir.mkdir(exist_ok=True)
+        
+        # Create timestamped folder within project
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        batch_dir = project_dir / f"{timestamp}_iteration-{iteration}"
+        batch_dir.mkdir(exist_ok=True)
+        
+        # Save each image
+        for i, img_data in enumerate(image_data_list, 1):
+            img = Image.open(io.BytesIO(img_data))
+            img_path = batch_dir / f"image_{i}.png"
+            img.save(img_path, 'PNG')
+        
+        # Save prompt to text file
+        prompt_file = batch_dir / "prompt.txt"
+        with open(prompt_file, 'w', encoding='utf-8') as f:
+            f.write(f"Project: {self.project_name}\n")
+            f.write(f"Iteration: {iteration}\n")
+            f.write(f"Aspect Ratio: {aspect_ratio}\n")
+            f.write(f"Timestamp: {timestamp}\n")
+            f.write(f"\n{'='*60}\n")
+            f.write(f"PROMPT:\n")
+            f.write(f"{'='*60}\n\n")
+            f.write(prompt)
+        
+        return batch_dir
+    
     def generate_images_batch(
         self,
         prompt: str,
-        num_images: int = 3
+        num_images: int = 3,
+        aspect_ratio: str = "16:9"
     ) -> Tuple[str, List]:
         """Generate a batch of images using Grok Imagine."""
         if not self.client:
@@ -151,7 +289,16 @@ class FPVPOVApp:
                 prompt=prompt,
                 reference_image=self.reference_image_path,
                 num_images=num_images,
-                additional_images=self.additional_images_paths if self.additional_images_paths else None
+                additional_images=self.additional_images_paths if self.additional_images_paths else None,
+                aspect_ratio=aspect_ratio
+            )
+            
+            # Save to permanent directory
+            saved_dir = self.save_images_permanently(
+                image_data_list=image_data_list,
+                prompt=prompt,
+                iteration=self.iteration_count,
+                aspect_ratio=aspect_ratio
             )
             
             # Convert to PIL Images for display
@@ -159,7 +306,7 @@ class FPVPOVApp:
             for img_data in image_data_list:
                 img = Image.open(io.BytesIO(img_data))
                 
-                # Save to temp file for later use
+                # Save to temp file for Gradio display
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
                 img.save(temp_file.name, 'PNG')
                 temp_file.close()
@@ -169,7 +316,12 @@ class FPVPOVApp:
             self.generated_images = images
             self.current_prompt = prompt
             
-            return f"✅ Generated {len(images)} images (Iteration {self.iteration_count})", images
+            return (
+                f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
+                f"� Project: {self.project_name}\n"
+                f"💾 Saved to: {self.project_name}/{saved_dir.name}/",
+                images
+            )
             
         except Exception as e:
             return f"❌ Error generating images: {str(e)}", []
@@ -225,6 +377,92 @@ class FPVPOVApp:
         except Exception as e:
             return f"❌ Error during review: {str(e)}", ""
     
+    def review_enhancement(
+        self,
+        green_base_image,
+        character_reference,
+        enhancement_description: str,
+        failed_enhancement_images: Optional[List] = None
+    ) -> Tuple[str, str]:
+        """Review failed enhancement images and generate corrected prompt.
+        
+        Args:
+            green_base_image: The base image with green/pink zones (@image1)
+            character_reference: Original character reference (@image2)
+            enhancement_description: What was supposed to be added
+            failed_enhancement_images: Images that failed to meet requirements
+        """
+        if not self.client:
+            return "❌ Please configure your API key first.", ""
+        
+        if not green_base_image:
+            return "❌ Please upload the green-zoned base image.", ""
+        
+        if not character_reference:
+            return "❌ Please upload the character reference image.", ""
+        
+        if not enhancement_description.strip():
+            return "❌ Please provide enhancement description.", ""
+        
+        # Save the base images
+        green_base_path = self.save_uploaded_file(green_base_image)
+        char_ref_path = self.save_uploaded_file(character_reference)
+        
+        # Get failed images to review
+        images_to_review = []
+        if failed_enhancement_images:
+            for img in failed_enhancement_images:
+                if img is not None:
+                    path = self.save_uploaded_file(img)
+                    if path:
+                        images_to_review.append(path)
+        elif self.generated_images:
+            images_to_review = self.generated_images
+        
+        if not images_to_review:
+            return "❌ No enhancement images to review. Please generate or upload images first.", ""
+        
+        try:
+            # Create Phase 2 specific scene description
+            phase2_scene = f"""Phase 2 Enhancement Review - Green Zone Addition:
+{enhancement_description}
+
+Context:
+- @image1 is the base image with green/pink zones marking where elements should be added
+- @image2 is the original character reference for style/appearance matching
+- Only add elements inside the marked zones
+- Completely erase all green/pink paint afterward
+- Lock everything else to @image1
+- Use @image2 for style/hair/appearance reference
+
+Review the failed enhancement attempts and identify what went wrong."""
+            
+            # Get corrected prompt
+            # Pass green_base as reference_image (@image1), char_ref as additional_images (@image2)
+            corrected_response = self.client.review_images(
+                failed_images=images_to_review,
+                original_prompt=self.current_prompt,
+                scene_description=phase2_scene,
+                reference_image=green_base_path,  # @image1
+                skill_content=self.review_skill,
+                additional_images=[char_ref_path]  # @image2
+            )
+            
+            # Extract just the prompt if it's in a code block
+            if "```" in corrected_response:
+                parts = corrected_response.split("```")
+                if len(parts) >= 3:
+                    corrected_prompt = parts[1].strip()
+                else:
+                    corrected_prompt = corrected_response
+            else:
+                corrected_prompt = corrected_response
+            
+            return "✅ Enhancement review complete! Corrected prompt generated.", corrected_prompt
+            
+        except Exception as e:
+            return f"❌ Error during enhancement review: {str(e)}", ""
+    
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
         with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft()) as app:
@@ -237,22 +475,81 @@ class FPVPOVApp:
                 existing_key = os.getenv("XAI_API_KEY")
                 initial_status = "✅ API key loaded from .env file" if existing_key else "Please enter your API key"
                 
-                api_key_input = gr.Textbox(
-                    label="Grok API Key (XAI_API_KEY)",
-                    type="password",
-                    placeholder="Enter your Grok API key or set XAI_API_KEY in .env file",
-                    value=existing_key or ""
-                )
+                with gr.Row():
+                    api_key_input = gr.Textbox(
+                        label="Grok API Key (XAI_API_KEY)",
+                        type="password",
+                        placeholder="Enter your Grok API key or set XAI_API_KEY in .env file",
+                        value=existing_key or ""
+                    )
+                
                 api_status = gr.Textbox(label="Status", interactive=False, value=initial_status)
-                api_key_input.change(
-                    fn=self.initialize_client,
-                    inputs=[api_key_input],
-                    outputs=[api_status]
+                
+                # Project name input
+                with gr.Row():
+                    project_name_input = gr.Textbox(
+                        label="Project Name",
+                        placeholder="Enter a project name (e.g., ninja-scene, pirate-ship)",
+                        value="untitled-project",
+                        info="Organizes your outputs by project. Changing this resets the iteration counter."
+                    )
+                    project_status = gr.Textbox(label="Project Status", interactive=False, value="📁 Project: untitled-project")
+                
+                project_name_input.change(
+                    fn=self.set_project_name,
+                    inputs=[project_name_input],
+                    outputs=[project_status]
                 )
                 
-                # Auto-initialize if key exists
-                if existing_key:
-                    self.initialize_client(existing_key)
+                # Model selection dropdowns
+                with gr.Row():
+                    chat_model_dropdown = gr.Dropdown(
+                        choices=["grok-4.20"],  # Will be updated after initialization
+                        value="grok-4.20",
+                        label="Chat Model (for prompt generation & review)",
+                        info="Used for analyzing images and generating prompts",
+                        interactive=True
+                    )
+                    image_model_dropdown = gr.Dropdown(
+                        choices=["grok-imagine-image-2.0"],  # Will be updated after initialization
+                        value="grok-imagine-image-2.0",
+                        label="Image Generation Model",
+                        info="Used for creating FPV POV images",
+                        interactive=True
+                    )
+                
+                model_status = gr.Textbox(label="Model Status", interactive=False, value="")
+                
+                # Update models when they change
+                chat_model_dropdown.change(
+                    fn=self.update_chat_model,
+                    inputs=[chat_model_dropdown],
+                    outputs=[model_status]
+                )
+                
+                image_model_dropdown.change(
+                    fn=self.update_image_model,
+                    inputs=[image_model_dropdown],
+                    outputs=[model_status]
+                )
+                
+                # Initialize client and fetch models
+                def init_and_fetch_models(api_key):
+                    status = self.initialize_client(api_key)
+                    chat_models, image_models = self.fetch_models()
+                    
+                    # Return updated choices and values
+                    return (
+                        status,
+                        gr.Dropdown(choices=chat_models, value=chat_models[0] if chat_models else "grok-4.20"),
+                        gr.Dropdown(choices=image_models, value=image_models[0] if image_models else "grok-imagine-image-2.0")
+                    )
+                
+                api_key_input.change(
+                    fn=init_and_fetch_models,
+                    inputs=[api_key_input],
+                    outputs=[api_status, chat_model_dropdown, image_model_dropdown]
+                )
             
             # Main workflow tabs
             with gr.Tabs():
@@ -312,6 +609,14 @@ class FPVPOVApp:
                             step=1,
                             label="Number of Images"
                         )
+                        aspect_ratio_dropdown = gr.Dropdown(
+                            choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+                            value="16:9",
+                            label="Aspect Ratio",
+                            info="Choose the aspect ratio for generated images"
+                        )
+                    
+                    with gr.Row():
                         generate_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
                     
                     generation_status = gr.Textbox(label="Status", interactive=False)
@@ -332,7 +637,7 @@ class FPVPOVApp:
                     
                     generate_images_btn.click(
                         fn=self.generate_images_batch,
-                        inputs=[prompt_to_use, num_images_slider],
+                        inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
                         outputs=[generation_status, output_gallery]
                     )
                 
@@ -416,8 +721,6 @@ class FPVPOVApp:
                         interactive=True
                     )
                     
-                    gr.Markdown("**Generate enhanced images using the prompt above in Tab 2**")
-                    
                     # This uses the same prompt generation logic but with phase 2 context
                     enhance_prompt_btn.click(
                         fn=lambda base, ref, desc: self.generate_initial_prompt(
@@ -428,6 +731,62 @@ class FPVPOVApp:
                         inputs=[green_base_image, original_char_ref, enhancement_description],
                         outputs=[enhance_status, enhancement_prompt]
                     )
+                    
+                    gr.Markdown("---")
+                    gr.Markdown("### 🔍 Review Enhancement Attempts")
+                    gr.Markdown("""
+                    After generating enhanced images in Tab 2, review them here to identify problems and get a corrected prompt.
+                    
+                    **Upload the same green-zoned base and character reference used above, plus the failed enhancement attempts.**
+                    """)
+                    
+                    with gr.Row():
+                        with gr.Column():
+                            review_green_base = gr.Image(
+                                label="Green-Zoned Base Image (@image1)",
+                                type="filepath"
+                            )
+                            review_char_ref = gr.Image(
+                                label="Character Reference (@image2)",
+                                type="filepath"
+                            )
+                        
+                        with gr.Column():
+                            review_enhancement_desc = gr.Textbox(
+                                label="What You Tried to Add",
+                                placeholder="What elements did you try to add in the zones?",
+                                lines=6
+                            )
+                            failed_enhancements = gr.File(
+                                label="Failed Enhancement Images (or leave empty to auto-use images from Tab 2)",
+                                file_count="multiple",
+                                type="filepath"
+                            )
+                    
+                    review_enhance_btn = gr.Button("🔍 Review & Generate Corrected Enhancement Prompt", variant="primary")
+                    review_enhance_status = gr.Textbox(label="Review Status", interactive=False)
+                    corrected_enhancement_prompt = gr.Textbox(
+                        label="Corrected Enhancement Prompt",
+                        lines=15,
+                        interactive=True
+                    )
+                    
+                    gr.Markdown("**Copy this corrected prompt to Tab 2 to regenerate enhanced images**")
+                    copy_enhance_to_gen_btn = gr.Button("📋 Copy to Generation Tab")
+                    
+                    review_enhance_btn.click(
+                        fn=self.review_enhancement,
+                        inputs=[review_green_base, review_char_ref, review_enhancement_desc, failed_enhancements],
+                        outputs=[review_enhance_status, corrected_enhancement_prompt]
+                    )
+                    
+                    copy_enhance_to_gen_btn.click(
+                        fn=lambda x: x,
+                        inputs=[corrected_enhancement_prompt],
+                        outputs=[prompt_to_use]
+                    )
+                    
+                    gr.Markdown("**Generate enhanced images using the prompt above in Tab 2**")
             
             # Instructions footer
             with gr.Accordion("📖 Instructions", open=False):
@@ -463,6 +822,16 @@ def launch():
     """Launch the Gradio app."""
     app = FPVPOVApp()
     interface = app.create_interface()
+    
+    # Auto-initialize if API key exists in environment
+    existing_key = os.getenv("XAI_API_KEY")
+    if existing_key:
+        print("🔑 Auto-initializing with API key from environment...")
+        app.initialize_client(existing_key)
+        chat_models, image_models = app.fetch_models()
+        if chat_models and image_models:
+            print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
+    
     interface.launch(share=False)
 
 
