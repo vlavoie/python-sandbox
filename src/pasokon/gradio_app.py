@@ -164,7 +164,7 @@ class FPVPOVApp:
     def set_project_name(self, project_name: str) -> Tuple[str, str]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty"
+            return "❌ Project name cannot be empty", self._get_project_display_string()
         
         # Sanitize project name (remove special characters)
         sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
@@ -173,8 +173,8 @@ class FPVPOVApp:
         if sanitized != self.project_name:
             self.project_name = sanitized
             self.iteration_count = 0
-            return f"✅ Project set to: {sanitized} (Iteration counter reset)"
-        return f"📁 Project: {sanitized}"
+            return f"✅ Project set to: {sanitized} (Iteration counter reset)", self._get_project_display_string()
+        return f"📁 Project: {sanitized}", self._get_project_display_string()
     
     def save_uploaded_file(self, file) -> Optional[str]:
         """Save an uploaded file to a temporary location."""
@@ -1119,16 +1119,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     # Chatbot interface for interactive review
                     review_chatbot = gr.Chatbot(
                         label="Review Conversation",
-                        height=400
-                    )
-                    
-                    # Gallery for failed image thumbnails
-                    failed_images_gallery = gr.Gallery(
-                        label="Failed Images Being Reviewed",
-                        columns=4,
-                        height=200,
-                        object_fit="contain",
-                        show_label=True
+                        height=600
                     )
                     
                     gr.Markdown("💡 **Tip:** First message starts the review. In your messages, you can refer to specific failed images as 'failed image 1', 'failed image 2', etc.")
@@ -1143,6 +1134,15 @@ Review the failed enhancement attempts and identify what went wrong."""
                             container=False
                         )
                         send_review_btn = gr.Button("Send", variant="secondary", scale=0, size="sm", min_width=80)
+                    
+                    # Gallery for failed image thumbnails
+                    failed_images_gallery = gr.Gallery(
+                        label="Failed Images Being Reviewed",
+                        columns=4,
+                        height=300,
+                        object_fit="contain",
+                        show_label=True
+                    )
                     
                     gr.Markdown("---")
                     gr.Markdown("**When you're satisfied with the conversation:**")
