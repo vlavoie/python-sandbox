@@ -8,6 +8,8 @@ import shutil
 from PIL import Image
 import io
 import os
+import json
+from datetime import datetime
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
@@ -70,6 +72,14 @@ class FPVPOVApp:
             ) from e
         except Exception as e:
             raise Exception(f"Error loading skill files: {e}") from e
+        
+        # Try to auto-load the last project
+        try:
+            load_msg = self.load_project_state()
+            if "Loaded project" in load_msg:
+                print(f"\n{load_msg}\n")
+        except Exception as e:
+            print(f"Note: Could not auto-load last project: {e}")
     
     def initialize_client(self, api_key: str) -> str:
         """Initialize the Grok client with API key."""
@@ -181,6 +191,139 @@ class FPVPOVApp:
         temp_file.close()
         return temp_file.name
     
+    def _get_project_metadata_path(self, project_name: str = None) -> Path:
+        """Get the path to the project metadata file."""
+        proj_name = project_name or self.project_name
+        project_dir = self.output_dir / proj_name
+        return project_dir / ".project_metadata.json"
+    
+    def save_project_state(self) -> str:
+        """Save current project state to disk for persistence across sessions."""
+        try:
+            project_dir = self.output_dir / self.project_name
+            project_dir.mkdir(parents=True, exist_ok=True)
+            
+            metadata_path = self._get_project_metadata_path()
+            
+            state = {
+                "project_name": self.project_name,
+                "current_prompt": self.current_prompt,
+                "current_scene": self.current_scene,
+                "reference_image_path": self.reference_image_path,
+                "additional_images_paths": self.additional_images_paths,
+                "generated_images": self.generated_images,
+                "iteration_count": self.iteration_count,
+                "review_mode": self.review_mode,
+                "greenzone_image_path": self.greenzone_image_path,
+                "current_phase2_description": self.current_phase2_description,
+                "last_saved": datetime.now().isoformat(),
+            }
+            
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=2)
+            
+            # Also save a "last project" marker
+            last_project_path = self.output_dir / ".last_project.txt"
+            with open(last_project_path, 'w') as f:
+                f.write(self.project_name)
+            
+            return f"✅ Project '{self.project_name}' saved"
+        except Exception as e:
+            return f"⚠️ Could not save project: {str(e)}"
+    
+    def load_project_state(self, project_name: str = None) -> str:
+        """Load project state from disk."""
+        try:
+            # If no project specified, try to load the last project
+            if not project_name:
+                last_project_path = self.output_dir / ".last_project.txt"
+                if last_project_path.exists():
+                    project_name = last_project_path.read_text().strip()
+                else:
+                    return "ℹ️ No saved project found"
+            
+            metadata_path = self._get_project_metadata_path(project_name)
+            
+            if not metadata_path.exists():
+                return f"ℹ️ No saved state found for project '{project_name}'"
+            
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+            
+            # Restore state
+            self.project_name = state.get("project_name", "untitled-project")
+            self.current_prompt = state.get("current_prompt", "")
+            self.current_scene = state.get("current_scene", "")
+            self.reference_image_path = state.get("reference_image_path")
+            self.additional_images_paths = state.get("additional_images_paths", [])
+            self.generated_images = state.get("generated_images", [])
+            self.iteration_count = state.get("iteration_count", 0)
+            self.review_mode = state.get("review_mode", "phase1")
+            self.greenzone_image_path = state.get("greenzone_image_path")
+            self.current_phase2_description = state.get("current_phase2_description", "")
+            
+            last_saved = state.get("last_saved", "unknown")
+            return f"""✅ Loaded project '{self.project_name}'
+            
+📅 Last saved: {last_saved}
+🎯 Mode: {self.review_mode}
+📝 Prompt: {'Set' if self.current_prompt else 'Not set'}
+🖼️ Reference: {'Set' if self.reference_image_path else 'Not set'}
+📸 Generated images: {len(self.generated_images)}
+🔄 Iterations: {self.iteration_count}"""
+            
+        except Exception as e:
+            return f"❌ Error loading project: {str(e)}"
+    
+    def list_projects(self) -> List[str]:
+        """List all available projects."""
+        try:
+            if not self.output_dir.exists():
+                return []
+            
+            projects = []
+            for item in self.output_dir.iterdir():
+                if item.is_dir() and not item.name.startswith('.'):
+                    metadata_path = item / ".project_metadata.json"
+                    if metadata_path.exists():
+                        # Has metadata, include with timestamp
+                        try:
+                            with open(metadata_path, 'r') as f:
+                                state = json.load(f)
+                                last_saved = state.get("last_saved", "")
+                                projects.append((item.name, last_saved))
+                        except:
+                            projects.append((item.name, ""))
+                    else:
+                        # Old project without metadata
+                        projects.append((item.name, ""))
+            
+            # Sort by last saved (most recent first)
+            projects.sort(key=lambda x: x[1], reverse=True)
+            return [name for name, _ in projects]
+        except Exception as e:
+            print(f"Error listing projects: {e}")
+            return []
+    
+    def set_project_name(self, name: str) -> str:
+        """Set the project name and save state."""
+        if not name or not name.strip():
+            return "❌ Project name cannot be empty"
+        
+        # Sanitize project name
+        safe_name = "".join(c for c in name if c.isalnum() or c in ('-', '_', ' ')).strip()
+        safe_name = safe_name.replace(' ', '-')
+        
+        if not safe_name:
+            return "❌ Invalid project name"
+        
+        old_name = self.project_name
+        self.project_name = safe_name
+        
+        save_status = self.save_project_state()
+        
+        return f"✅ Project renamed: '{old_name}' → '{safe_name}'\n{save_status}"
+    
     def generate_initial_prompt(
         self,
         reference_image,
@@ -218,6 +361,9 @@ class FPVPOVApp:
                 skill_content=self.prompt_skill,
                 additional_images=self.additional_images_paths if self.additional_images_paths else None
             )
+            
+            # Auto-save project state
+            self.save_project_state()
             
             return "✅ Prompt generated successfully!", self.current_prompt
             
@@ -351,6 +497,9 @@ class FPVPOVApp:
                     f"💾 Saved to: {self.project_name}/{saved_dir.name}/"
                 )
             
+            # Auto-save project state
+            self.save_project_state()
+            
             return status_msg, images
             
         except Exception as e:
@@ -369,7 +518,7 @@ class FPVPOVApp:
         - phase2: IMAGE_0=character, IMAGE_1=greenzone base
         """
         if not self.client:
-            return [], "❌ Please configure your API key first."
+            return [], "❌ Please configure your API key first.", []
         
         # Determine which images to review
         images_to_review = []
@@ -384,7 +533,7 @@ class FPVPOVApp:
             images_to_review = self.generated_images
         
         if not images_to_review:
-            return [], "❌ No images to review. Please generate or upload images first."
+            return [], "❌ No images to review. Please generate or upload images first.", []
         
         try:
             # Determine image ordering based on review mode
@@ -422,6 +571,13 @@ Review the failed enhancement attempts."""
             }
             
             # Build user's initial message
+            image_ref_guide = "- <IMAGE_0> = Character reference (for style/appearance lock)"
+            if self.review_mode == 'phase2':
+                image_ref_guide += "\n- <IMAGE_1> = Green-zoned base (spatial guide for enhancements)"
+            elif additional_images:
+                image_ref_guide += f"\n- <IMAGE_1>+ = Additional characters ({len(additional_images)} provided)"
+            image_ref_guide += "\n- Failed images = Analyzed by AI (refer to as 'failed image 1', 'failed image 2', etc.)"
+            
             user_initial_msg = f"""[{mode_label} Review]
 
 Here are the failed images to review:
@@ -429,10 +585,7 @@ Here are the failed images to review:
 {user_comment if user_comment.strip() else 'Please review these images and suggest corrections.'}
 
 Image Reference Guide:
-- <IMAGE_0> = Character reference (for style/appearance lock)
-{f'- <IMAGE_1> = Green-zoned base (spatial guide for enhancements)' if self.review_mode == 'phase2' else ''}
-{f'- <IMAGE_1>+ = Additional characters' if self.review_mode == 'phase1' and additional_images else ''}
-- Failed images = Shown as thumbnails (refer to as 'failed image 1', 'failed image 2', etc.)"""
+{image_ref_guide}"""
             
             # Get initial review
             initial_review = self.client.review_images(
@@ -444,31 +597,37 @@ Image Reference Guide:
                 additional_images=additional_images
             )
             
-            # Build chat history with image thumbnails
-            # First message: user's comment with image gallery
-            user_msg_with_images = {
-                "text": user_initial_msg,
-                "files": images_to_review  # Gradio will display these as thumbnails
-            }
+            # Build user's initial message with file list
+            image_list = "\n".join([f"  • {Path(img).name}" for img in images_to_review])
+            user_initial_msg_with_files = f"""{user_initial_msg}
+
+Failed image files being reviewed:
+{image_list}"""
             
-            # Initialize chat history with images
+            # Initialize chat history (Gradio Chatbot expects tuple of strings)
             self.phase1_review_history = [
-                (user_msg_with_images, initial_review)
+                (user_initial_msg_with_files, initial_review)
             ]
+            
+            # Build instructions based on mode
+            mode_specific_info = ""
+            if self.review_mode == 'phase2':
+                mode_specific_info = "\n🗂 <IMAGE_1> = Green-zoned base"
+            elif additional_images:
+                mode_specific_info = f"\n🗂 <IMAGE_1>+ = {len(additional_images)} additional character(s)"
             
             instructions = f"""✅ {mode_label} Review started!
             
 🎯 Mode: {mode_label}
-📸 {len(images_to_review)} failed image(s) shown above
-🗂 <IMAGE_0> = Character reference (always)
-{'🗂 <IMAGE_1> = Green-zoned base' if self.review_mode == 'phase2' else ''}
+📸 {len(images_to_review)} failed image(s) being analyzed
+🗂 <IMAGE_0> = Character reference (always){mode_specific_info}
 💬 Refer to failed images as 'failed image 1', 'failed image 2', etc.
 ❓ Ask questions or request changes"""
             
-            return self.phase1_review_history, instructions
+            return self.phase1_review_history, instructions, images_to_review
             
         except Exception as e:
-            return [], f"❌ Error during review: {str(e)}"
+            return [], f"❌ Error during review: {str(e)}", []
     
     def continue_phase1_review(self, user_message: str, history: List) -> Tuple[List, str]:
         """Continue the Phase 1 review conversation."""
@@ -513,15 +672,9 @@ Image Reference Guide:
             
             # Add conversation history
             for user_msg, assistant_msg in history:
-                # Extract text from dict format if needed
-                if isinstance(user_msg, dict):
-                    user_text = user_msg.get("text", "")
-                else:
-                    user_text = user_msg
-                
-                # Skip the initial auto-generated message
-                if user_text and "Here are the failed images to review:" not in user_text:
-                    messages.append({"role": "user", "content": user_text})
+                # Skip the initial auto-generated message (all user messages are now strings)
+                if user_msg and "Here are the failed images to review:" not in user_msg:
+                    messages.append({"role": "user", "content": user_msg})
                 if assistant_msg:
                     messages.append({"role": "assistant", "content": assistant_msg})
             
@@ -631,6 +784,9 @@ Context:
    • <IMAGE_0> = Character reference (style lock)
    • <IMAGE_1> = Green-zoned base (spatial guide)"""
             
+            # Auto-save project state
+            self.save_project_state()
+            
             return status, self.current_prompt
             
         except Exception as e:
@@ -729,6 +885,10 @@ Review the failed enhancement attempts and identify what went wrong."""
             gr.Markdown("# 🎨 FPV POV Image Generator")
             gr.Markdown("Automate your Grok-based first-person POV image generation workflow")
             
+            # Current project indicator
+            with gr.Row():
+                current_project_display = gr.Markdown(f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action")
+            
             # API Key configuration
             with gr.Accordion("⚙️ Configuration", open=True):
                 # Check if API key is already set
@@ -822,6 +982,64 @@ Review the failed enhancement attempts and identify what went wrong."""
             with gr.Tabs():
                 # Tab 1: Initial Prompt Generation
                 with gr.Tab("1️⃣ Generate Prompt"):
+                    # Project management section
+                    with gr.Accordion("📁 Project Management", open=False):
+                        gr.Markdown("""
+                        **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
+                        
+                        Saved data includes: prompts, images, references, review mode, and more.
+                        """)
+                        
+                        with gr.Row():
+                            with gr.Column():
+                                project_name_input = gr.Textbox(
+                                    label="Project Name",
+                                    value=self.project_name,
+                                    placeholder="my-fpv-project"
+                                )
+                                set_project_btn = gr.Button("💾 Set Project Name")
+                            
+                            with gr.Column():
+                                project_selector = gr.Dropdown(
+                                    label="Load Existing Project",
+                                    choices=self.list_projects(),
+                                    value=None
+                                )
+                                load_project_btn = gr.Button("📂 Load Selected Project")
+                        
+                        project_mgmt_status = gr.Textbox(
+                            label="Project Status",
+                            interactive=False,
+                            lines=8
+                        )
+                        
+                        manual_save_btn = gr.Button("💾 Save Current State (auto-saves after each action)")
+                        refresh_projects_btn = gr.Button("🔄 Refresh Project List")
+                        
+                        # Event handlers for project management
+                        set_project_btn.click(
+                            fn=self.set_project_name,
+                            inputs=[project_name_input],
+                            outputs=[project_mgmt_status]
+                        )
+                        
+                        load_project_btn.click(
+                            fn=self.load_project_state,
+                            inputs=[project_selector],
+                            outputs=[project_mgmt_status]
+                        )
+                        
+                        manual_save_btn.click(
+                            fn=self.save_project_state,
+                            outputs=[project_mgmt_status]
+                        )
+                        
+                        refresh_projects_btn.click(
+                            fn=lambda: gr.Dropdown(choices=self.list_projects()),
+                            outputs=[project_selector]
+                        )
+                    
+                    gr.Markdown("---")
                     gr.Markdown("### Upload reference image and describe your scene")
                     
                     with gr.Row():
@@ -947,9 +1165,18 @@ Review the failed enhancement attempts and identify what went wrong."""
                     start_review_btn = gr.Button("🔍 Start Review", variant="primary")
                     review_status = gr.Textbox(label="Status", interactive=False)
                     
+                    # Gallery for failed image thumbnails
+                    failed_images_gallery = gr.Gallery(
+                        label="Failed Images Being Reviewed",
+                        columns=4,
+                        height=200,
+                        object_fit="contain",
+                        show_label=True
+                    )
+                    
                     # Chatbot interface for interactive review
                     review_chatbot = gr.Chatbot(
-                        label="Review Conversation (Images shown as thumbnails)",
+                        label="Review Conversation",
                         height=400
                     )
                     
@@ -980,7 +1207,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     start_review_btn.click(
                         fn=self.start_phase1_review,
                         inputs=[review_initial_comment, failed_images_upload],
-                        outputs=[review_chatbot, review_status]
+                        outputs=[review_chatbot, review_status, failed_images_gallery]
                     )
                     
                     def send_message(msg, history):
