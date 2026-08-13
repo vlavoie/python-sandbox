@@ -120,7 +120,13 @@ class FPVPOVApp:
             return "✅ Prompt generated successfully!", self.current_prompt
             
         except Exception as e:
-            return f"❌ Error generating prompt: {str(e)}", ""
+            error_msg = str(e)
+            print(f"\n{'='*60}")
+            print(f"ERROR IN PROMPT GENERATION:")
+            print(f"{'='*60}")
+            print(error_msg)
+            print(f"{'='*60}\n")
+            return f"❌ Error generating prompt: {error_msg}", ""
     
     def generate_images_batch(
         self,

@@ -94,7 +94,7 @@ class GrokClient:
                 content.append({
                     "type": "image_url",
                     "image_url": {
-                        "self.chat_modelpeg;base64,{self._encode_image(img_path)}"
+                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
                     }
                 })
         
@@ -110,6 +110,11 @@ class GrokClient:
                 "temperature": 0.7,
             }
             
+            # Debug logging
+            print(f"DEBUG: Sending request to {self.base_url}/chat/completions")
+            print(f"DEBUG: Model: {self.chat_model}")
+            print(f"DEBUG: Content items: {len(content)}")
+            
             try:
                 response = client.post(
                     f"{self.base_url}/chat/completions",
@@ -119,9 +124,24 @@ class GrokClient:
                 response.raise_for_status()
                 result = response.json()
             except httpx.HTTPStatusError as e:
-                print(f"HTTP Error: {e.response.status_code}")
-                print(f"Response: {e.response.text}")
-                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
+                error_detail = e.response.text
+                print(f"\n❌ HTTP Error: {e.response.status_code}")
+                print(f"❌ Response: {error_detail}")
+                print(f"❌ Request URL: {e.request.url}")
+                print(f"❌ Model used: {self.chat_model}")
+                
+                # Try to parse error JSON for more details
+                try:
+                    error_json = e.response.json()
+                    print(f"❌ Error details: {error_json}")
+                except:
+                    pass
+                
+                raise Exception(
+                    f"Grok API Error ({e.response.status_code}): {error_detail}\n\n"
+                    f"Model: {self.chat_model}\n"
+                    f"Check if the model name is correct and your API key has access to vision models."
+                )
             
             # Extract the prompt from the code block
             full_response = result["choices"][0]["message"]["content"]
@@ -169,6 +189,9 @@ class GrokClient:
                     "response_format": "b64_json"
                 }
                 
+                print(f"DEBUG: Generating image {i+1}/{num_images}")
+                print(f"DEBUG: Model: {self.image_model}")
+                
                 try:
                     response = client.post(
                         f"{self.base_url}/images/generations",
@@ -178,9 +201,20 @@ class GrokClient:
                     response.raise_for_status()
                     result = response.json()
                 except httpx.HTTPStatusError as e:
-                    print(f"HTTP Error: {e.response.status_code}")
-                    print(f"Response: {e.response.text}")
-                    raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
+                    error_detail = e.response.text
+                    print(f"\n❌ Image Generation Error: {e.response.status_code}")
+                    print(f"❌ Response: {error_detail}")
+                    print(f"❌ Model used: {self.image_model}")
+                    try:
+                        error_json = e.response.json()
+                        print(f"❌ Error details: {error_json}")
+                    except:
+                        pass
+                    raise Exception(
+                        f"Grok Image API Error ({e.response.status_code}): {error_detail}\n\n"
+                        f"Model: {self.image_model}\n"
+                        f"Check if the model name is correct and your API key has access to image generation."
+                    )
                 
                 # Decode the base64 image
                 image_b64 = result["data"][0]["b64_json"]
@@ -271,6 +305,9 @@ class GrokClient:
                 "temperature": 0.7,
             }
             
+            print(f"DEBUG: Sending review request to {self.base_url}/chat/completions")
+            print(f"DEBUG: Model: {self.chat_model}")
+            
             try:
                 response = client.post(
                     f"{self.base_url}/chat/completions",
@@ -280,9 +317,20 @@ class GrokClient:
                 response.raise_for_status()
                 result = response.json()
             except httpx.HTTPStatusError as e:
-                print(f"HTTP Error: {e.response.status_code}")
-                print(f"Response: {e.response.text}")
-                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
+                error_detail = e.response.text
+                print(f"\n❌ HTTP Error: {e.response.status_code}")
+                print(f"❌ Response: {error_detail}")
+                print(f"❌ Model used: {self.chat_model}")
+                try:
+                    error_json = e.response.json()
+                    print(f"❌ Error details: {error_json}")
+                except:
+                    pass
+                raise Exception(
+                    f"Grok API Error ({e.response.status_code}): {error_detail}\n\n"
+                    f"Model: {self.chat_model}\n"
+                    f"Check if the model name is correct and your API key has access to vision models."
+                )
             
             # Extract the corrected prompt
             full_response = result["choices"][0]["message"]["content"]
