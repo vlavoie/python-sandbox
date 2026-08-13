@@ -253,8 +253,15 @@ class GrokClient:
                     "text": f"\n\nAdditional reference (@image{idx}):"
                 })
                 content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
+                    }
+                })
+        
+        with httpx.Client(timeout=60.0) as client:
             payload = {
-                "model": "grok-2-vision-1212",
+                "model": self.chat_model,
                 "messages": [
                     {
                         "role": "user",
@@ -275,14 +282,7 @@ class GrokClient:
             except httpx.HTTPStatusError as e:
                 print(f"HTTP Error: {e.response.status_code}")
                 print(f"Response: {e.response.text}")
-                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}"t": content
-                        }
-                    ],
-                    "temperature": 0.7,
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
+                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
             
             # Extract the corrected prompt
             full_response = result["choices"][0]["message"]["content"]
