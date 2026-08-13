@@ -24,17 +24,23 @@ class GeneratedImage:
 class GrokClient:
     """Client for interacting with Grok and Grok Imagine APIs."""
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         """Initialize the Grok client.
         
         Args:
             api_key: Grok API key. If not provided, reads from XAI_API_KEY env var.
+            base_url: API base URL. Defaults to https://api.x.ai/v1
         """
         self.api_key = api_key or os.getenv("XAI_API_KEY")
         if not self.api_key:
             raise ValueError("Grok API key must be provided or set in XAI_API_KEY environment variable")
         
-        self.base_url = "https://api.x.ai/v1"
+        self.base_url = base_url or os.getenv("XAI_API_BASE_URL", "https://api.x.ai/v1")
+        
+        # Model names - can be overridden via environment variables
+        self.chat_model = os.getenv("XAI_CHAT_MODEL", "grok-2-vision-1212")
+        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-2-image-1212")
+        
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -88,27 +94,34 @@ class GrokClient:
                 content.append({
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
+                        "self.chat_modelpeg;base64,{self._encode_image(img_path)}"
                     }
                 })
         
         with httpx.Client(timeout=60.0) as client:
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json={
-                    "model": "grok-2-vision-1212",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": content
-                        }
-                    ],
-                    "temperature": 0.7,
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
+            payload = {
+                "model": self.chat_model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": content
+                    }
+                ],
+                "temperature": 0.7,
+            }
+            
+            try:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self.headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                result = response.json()
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP Error: {e.response.status_code}")
+                print(f"Response: {e.response.text}")
+                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
             
             # Extract the prompt from the code block
             full_response = result["choices"][0]["message"]["content"]
@@ -147,20 +160,27 @@ class GrokClient:
         
         with httpx.Client(timeout=120.0) as client:
             for i in range(num_images):
-                response = client.post(
-                    f"{self.base_url}/images/generations",
-                    headers=self.headers,
-                    json={
-                        "model": "grok-2-image-1212",
-                        "prompt": prompt,
-                        "images": image_urls,
-                        "n": 1,
-                        "size": "1024x1024",
-                        "response_format": "b64_json"
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
+                payload = {
+                    "model": self.image_model,
+                    "prompt": prompt,
+                    "images": image_urls,
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json"
+                }
+                
+                try:
+                    response = client.post(
+                        f"{self.base_url}/images/generations",
+                        headers=self.headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                except httpx.HTTPStatusError as e:
+                    print(f"HTTP Error: {e.response.status_code}")
+                    print(f"Response: {e.response.text}")
+                    raise Exception(f"API Error ({e.response.status_code}): {e.response.text}")
                 
                 # Decode the base64 image
                 image_b64 = result["data"][0]["b64_json"]
@@ -233,22 +253,29 @@ class GrokClient:
                     "text": f"\n\nAdditional reference (@image{idx}):"
                 })
                 content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
+            payload = {
+                "model": "grok-2-vision-1212",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": content
                     }
-                })
-        
-        with httpx.Client(timeout=60.0) as client:
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self.headers,
-                json={
-                    "model": "grok-2-vision-1212",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": content
+                ],
+                "temperature": 0.7,
+            }
+            
+            try:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self.headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                result = response.json()
+            except httpx.HTTPStatusError as e:
+                print(f"HTTP Error: {e.response.status_code}")
+                print(f"Response: {e.response.text}")
+                raise Exception(f"API Error ({e.response.status_code}): {e.response.text}"t": content
                         }
                     ],
                     "temperature": 0.7,
