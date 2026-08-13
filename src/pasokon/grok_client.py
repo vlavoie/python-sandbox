@@ -198,40 +198,40 @@ class GrokClient:
         """
         images = []
         
-        # Prepare image URLs as data URIs
-        image_urls = [f"data:image/jpeg;base64,{self._encode_image(reference_image)}"]
+        # Prepare images array for /images/edits endpoint
+        # Each image is an object with "url" key containing base64 data URI
+        images_array = [{"url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"}]
         if additional_images:
             for img_path in additional_images:
-                image_urls.append(f"data:image/jpeg;base64,{self._encode_image(img_path)}")
+                images_array.append({"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"})
         
         # Format payload for /images/edits endpoint
-        # For multi-image editing, we send images array and prompt
+        # API uses <IMAGE_0>, <IMAGE_1>, <IMAGE_2> to reference images in prompt
         payload = {
             "model": self.image_model,
-            "prompt": {
-                "text": prompt,
-                "images": image_urls  # Multiple reference images
-            },
+            "prompt": prompt,
+            "images": images_array,
             "aspect_ratio": aspect_ratio
         }
         
         print(f"\n🎨 Generating {num_images} images in parallel...")
         print(f"   Model: {self.image_model}")
         print(f"   Aspect ratio: {aspect_ratio}")
-        print(f"   Reference images being sent: {len(image_urls)}")
+        print(f"   Reference images being sent: {len(images_array)}")
         print(f"   Prompt length: {len(prompt)} characters")
-        if len(image_urls) > 0:
-            print(f"   ✅ Reference image (@image1) IS being sent to the API")
-        if len(image_urls) > 1:
-            print(f"   ✅ {len(image_urls) - 1} additional image(s) (@image2, @image3...) being sent")
         
-        # DEBUG: Show first 500 chars of prompt
-        print(f"\n📝 PROMPT PREVIEW (first 500 chars):")
-        print(f"   {prompt[:500]}...")
-        if "@image" in prompt.lower():
-            print(f"   ⚠️  WARNING: Prompt contains @image references!")
-            print(f"   ⚠️  The API might not understand @image1, @image2 syntax!")
-            print(f"   ⚠️  This could be why FPV/style matching fails!")
+        # DEBUG: Show prompt preview and check reference format
+        print(f"\n📝 PROMPT PREVIEW (first 200 chars):")
+        print(f"   {prompt[:200]}...")
+        
+        has_angle_brackets = "<IMAGE_" in prompt
+        has_at_symbols = "@image" in prompt.lower()
+        
+        if has_at_symbols and not has_angle_brackets:
+            print(f"\n   ⚠️  WARNING: Prompt uses '@image' syntax but API expects '<IMAGE_0>', '<IMAGE_1>', etc.!")
+            print(f"   💡 Skill files need to be updated to use <IMAGE_0>, <IMAGE_1>, <IMAGE_2> format")
+        elif has_angle_brackets:
+            print(f"   ✅ Prompt uses correct <IMAGE_N> reference syntax")
         
         def generate_single_image(index: int) -> tuple[int, bytes]:
             """Generate a single image (for parallel execution)."""
