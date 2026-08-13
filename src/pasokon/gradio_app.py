@@ -103,15 +103,18 @@ class FPVPOVApp:
                         self.all_models.append(model_id)
                         
                         # Categorize models
-                        if "imagine" in model_id.lower() or "image" in model_id.lower():
+                        # Image models: grok-imagine-image variants (but NOT video)
+                        if ("imagine" in model_id.lower() or "image" in model_id.lower()) and "video" not in model_id.lower():
                             image_models.append(model_id)
-                        else:
+                        # Chat models: everything else that's not image/video
+                        elif "video" not in model_id.lower() and "imagine" not in model_id.lower():
                             chat_models.append(model_id)
                 
                 self.available_chat_models = chat_models if chat_models else ["grok-4.20"]
                 self.available_image_models = image_models if image_models else ["grok-imagine-image-2.0"]
                 
                 print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
+                print(f"   Image models: {', '.join(image_models[:5])}{'...' if len(image_models) > 5 else ''}")
                 return chat_models, image_models
             else:
                 # Fallback to defaults
@@ -819,18 +822,25 @@ Review the failed enhancement attempts and identify what went wrong."""
                 # Model selection dropdowns
                 with gr.Row():
                     chat_model_dropdown = gr.Dropdown(
-                        choices=["grok-4.20"],  # Will be updated after initialization
+                        choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
                         value="grok-4.20",
                         label="Chat Model (for prompt generation & review)",
                         info="Used for analyzing images and generating prompts",
-                        interactive=True
+                        interactive=True,
+                        allow_custom_value=True
                     )
                     image_model_dropdown = gr.Dropdown(
-                        choices=["grok-imagine-image-2.0"],  # Will be updated after initialization
-                        value="grok-imagine-image-2.0",
+                        choices=[
+                            "grok-imagine-image-quality",
+                            "grok-imagine-image-pro", 
+                            "grok-imagine-image-2.0",
+                            "grok-imagine-image"
+                        ],
+                        value="grok-imagine-image-quality",
                         label="Image Generation Model",
-                        info="Used for creating FPV POV images",
-                        interactive=True
+                        info="Used for creating FPV POV images (quality recommended)",
+                        interactive=True,
+                        allow_custom_value=True
                     )
                 
                 model_status = gr.Textbox(label="Model Status", interactive=False, value="")
@@ -1219,9 +1229,12 @@ def launch():
     if existing_key:
         print("🔑 Auto-initializing with API key from environment...")
         app.initialize_client(existing_key)
+        # Set default to quality model
+        app.client.image_model = "grok-imagine-image-quality"
         chat_models, image_models = app.fetch_models()
         if chat_models and image_models:
             print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
+            print(f"🎨 Default image model: grok-imagine-image-quality")
     
     interface.launch(share=False)
 

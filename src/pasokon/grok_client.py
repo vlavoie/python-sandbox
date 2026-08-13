@@ -43,8 +43,8 @@ class GrokClient:
         # Current Grok 4.20 models support vision (images)
         # Run 'poetry run python list_models.py' to see all available models
         self.chat_model = os.getenv("XAI_CHAT_MODEL", "grok-4.20")
-        # Image generation models: grok-imagine-image, grok-imagine-image-2.0, grok-imagine-image-quality
-        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-imagine-image-2.0")
+        # Image generation models: grok-imagine-image-quality (best), grok-imagine-image-pro, grok-imagine-image-2.0, grok-imagine-image
+        self.image_model = os.getenv("XAI_IMAGE_MODEL", "grok-imagine-image-quality")
         
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
