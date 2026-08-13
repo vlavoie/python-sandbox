@@ -1006,12 +1006,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                         lines=15,
                         interactive=True
                     )
-                    
-                    generate_prompt_btn.click(
-                        fn=self.generate_initial_prompt,
-                        inputs=[reference_image, scene_description, additional_images],
-                        outputs=[unified_status, generated_prompt]
-                    )
                 
                 # Tab 2: Image Generation
                 with gr.Tab("2️⃣ Generate Images"):
@@ -1056,12 +1050,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                         outputs=[prompt_to_use]
                     )
                     
-                    generate_images_btn.click(
-                        fn=self.generate_images_batch,
-                        inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
-                        outputs=[unified_status, output_gallery]
-                    )
-                
                 # Tab 3: Review and Correction
                 with gr.Tab("3️⃣ Review & Correct"):
                     gr.Markdown("### Interactive Review System (Handles Both Phase 1 & Phase 2)")
@@ -1130,34 +1118,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                     extract_and_send_btn = gr.Button("📤 Extract Final Prompt & Send to Generation Tab", variant="primary")
                     
-                    # Event handlers
-                    start_review_btn.click(
-                        fn=self.start_phase1_review,
-                        inputs=[review_initial_comment, failed_images_upload],
-                        outputs=[review_chatbot, unified_status, failed_images_gallery]
-                    )
-                    
-                    def send_message(msg, history):
-                        if not msg.strip():
-                            return history, "", ""
-                        return self.continue_phase1_review(msg, history)[0], "", ""
-                    
-                    send_review_btn.click(
-                        fn=send_message,
-                        inputs=[review_user_input, review_chatbot],
-                        outputs=[review_chatbot, review_user_input, unified_status]
-                    )
-                    
-                    review_user_input.submit(
-                        fn=send_message,
-                        inputs=[review_user_input, review_chatbot],
-                        outputs=[review_chatbot, review_user_input, unified_status]
-                    )
-                    
-                    extract_and_send_btn.click(
-                        fn=self.extract_prompt_from_phase1_chat,
-                        outputs=[prompt_to_use, unified_status]
-                    )
+                    # Event handlers defined after unified_status is created (see bottom of UI)
                 
                 # Tab 4: Phase 2 - Manual Enhancement
                 with gr.Tab("4️⃣ Phase 2: Enhancements"):
@@ -1203,23 +1164,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     copy_phase2_to_gen_btn = gr.Button("📋 Copy to Generation Tab (Tab 2)")
                     reset_to_phase1_btn = gr.Button("🔄 Reset to Phase 1 Mode (for regular reviews)")
                     
-                    # Event handlers
-                    enhance_prompt_btn.click(
-                        fn=self.set_phase2_mode_and_generate_prompt,
-                        inputs=[green_base_image, enhancement_description],
-                        outputs=[unified_status, enhancement_prompt]
-                    )
-                    
-                    copy_phase2_to_gen_btn.click(
-                        fn=lambda x: x,
-                        inputs=[enhancement_prompt],
-                        outputs=[prompt_to_use]
-                    )
-                    
-                    reset_to_phase1_btn.click(
-                        fn=self.set_phase1_mode,
-                        outputs=[unified_status]
-                    )
+                    # Event handlers defined after unified_status is created (see bottom of UI)
             
             # Unified Status Bar (bottom of UI)
             gr.Markdown("---")
@@ -1258,7 +1203,69 @@ Review the failed enhancement attempts and identify what went wrong."""
                 value="Ready. Configure your API key above to get started."
             )
             
-            # Update models when they change
+            # Wire up all event handlers that use unified_status
+            # Tab 1: Generate Prompt
+            generate_prompt_btn.click(
+                fn=self.generate_initial_prompt,
+                inputs=[reference_image, scene_description, additional_images],
+                outputs=[unified_status, generated_prompt]
+            )
+            
+            # Tab 2: Generate Images
+            generate_images_btn.click(
+                fn=self.generate_images_batch,
+                inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
+                outputs=[unified_status, output_gallery]
+            )
+            
+            # Tab 3: Review & Correct
+            def send_message(msg, history):
+                if not msg.strip():
+                    return history, "", ""
+                return self.continue_phase1_review(msg, history)[0], "", ""
+            
+            start_review_btn.click(
+                fn=self.start_phase1_review,
+                inputs=[review_initial_comment, failed_images_upload],
+                outputs=[review_chatbot, unified_status, failed_images_gallery]
+            )
+            
+            send_review_btn.click(
+                fn=send_message,
+                inputs=[review_user_input, review_chatbot],
+                outputs=[review_chatbot, review_user_input, unified_status]
+            )
+            
+            review_user_input.submit(
+                fn=send_message,
+                inputs=[review_user_input, review_chatbot],
+                outputs=[review_chatbot, review_user_input, unified_status]
+            )
+            
+            extract_and_send_btn.click(
+                fn=self.extract_prompt_from_phase1_chat,
+                outputs=[prompt_to_use, unified_status]
+            )
+            
+            # Tab 4: Phase 2 Enhancements
+            enhance_prompt_btn.click(
+                fn=self.set_phase2_mode_and_generate_prompt,
+                inputs=[green_base_image, enhancement_description],
+                outputs=[unified_status, enhancement_prompt]
+            )
+            
+            copy_phase2_to_gen_btn.click(
+                fn=lambda x: x,
+                inputs=[enhancement_prompt],
+                outputs=[prompt_to_use]
+            )
+            
+            reset_to_phase1_btn.click(
+                fn=self.set_phase1_mode,
+                outputs=[unified_status]
+            )
+            
+            # Model selection updates
             chat_model_dropdown.change(
                 fn=self.update_chat_model,
                 inputs=[chat_model_dropdown],
