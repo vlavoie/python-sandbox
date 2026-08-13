@@ -6,6 +6,10 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 import httpx
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 @dataclass

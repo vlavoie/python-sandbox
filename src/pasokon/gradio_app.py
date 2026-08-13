@@ -7,8 +7,13 @@ import tempfile
 import shutil
 from PIL import Image
 import io
+import os
+from dotenv import load_dotenv
 
 from .grok_client import GrokClient
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class FPVPOVApp:
@@ -150,7 +155,6 @@ class FPVPOVApp:
     
     def review_and_correct(
         self,
-        selected_images: Optional[List] = None,
         manual_uploaded_images: Optional[List] = None
     ) -> Tuple[str, str]:
         """Review failed images and generate corrected prompt."""
@@ -167,11 +171,8 @@ class FPVPOVApp:
                     path = self.save_uploaded_file(img)
                     if path:
                         images_to_review.append(path)
-        elif selected_images:
-            # Use selected generated images
-            images_to_review = selected_images
         elif self.generated_images:
-            # Use all generated images
+            # Use all generated images from previous generation
             images_to_review = self.generated_images
         
         if not images_to_review:
@@ -211,17 +212,26 @@ class FPVPOVApp:
             
             # API Key configuration
             with gr.Accordion("⚙️ Configuration", open=True):
+                # Check if API key is already set
+                existing_key = os.getenv("XAI_API_KEY")
+                initial_status = "✅ API key loaded from .env file" if existing_key else "Please enter your API key"
+                
                 api_key_input = gr.Textbox(
                     label="Grok API Key (XAI_API_KEY)",
                     type="password",
-                    placeholder="Enter your Grok API key or set XAI_API_KEY environment variable"
+                    placeholder="Enter your Grok API key or set XAI_API_KEY in .env file",
+                    value=existing_key or ""
                 )
-                api_status = gr.Textbox(label="Status", interactive=False)
+                api_status = gr.Textbox(label="Status", interactive=False, value=initial_status)
                 api_key_input.change(
                     fn=self.initialize_client,
                     inputs=[api_key_input],
                     outputs=[api_status]
                 )
+                
+                # Auto-initialize if key exists
+                if existing_key:
+                    self.initialize_client(existing_key)
             
             # Main workflow tabs
             with gr.Tabs():
@@ -335,7 +345,7 @@ class FPVPOVApp:
                     
                     review_btn.click(
                         fn=self.review_and_correct,
-                        inputs=[None, failed_images_upload],
+                        inputs=[failed_images_upload],
                         outputs=[review_status, corrected_prompt]
                     )
                     
