@@ -976,20 +976,6 @@ Review the failed enhancement attempts and identify what went wrong."""
             with gr.Tabs():
                 # Tab 1: Project Management
                 with gr.Tab("💾 Project Management"):
-                    gr.Markdown("### Project Configuration")
-                    gr.Markdown("Set your project name and manage saved projects")
-                    
-                    # Project name input
-                    with gr.Row():
-                        project_name_input = gr.Textbox(
-                            label="Project Name",
-                            placeholder="Enter a project name (e.g., ninja-scene, pirate-ship)",
-                            value="untitled-project",
-                            info="Organizes your outputs by project. Changing this resets the iteration counter."
-                        )
-                        project_status = gr.Textbox(label="Project Status", interactive=False, value="📁 Project: untitled-project")
-                    
-                    gr.Markdown("---")
                     gr.Markdown("### Load & Save Projects")
                     gr.Markdown("""
                     **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
@@ -1153,24 +1139,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                 
                 # Tab 5: Phase 2 - Manual Enhancement
                 with gr.Tab("5️⃣ Phase 2: Enhancements"):
-                    gr.Markdown("### Generate Enhancement Prompts (Green Zone Method)")
-                    gr.Markdown("""
-                    This phase is for adding elements that often fail (like hair fringe) using the green-zone technique.
-                    
-                    **Workflow:**
-                    1. Take your best base image from Phase 1
-                    2. Mark green zones in Photoshop/GIMP where you want elements added
-                    3. Upload the green-marked image below
-                    4. Describe what to add in the green zones
-                    5. Generate the enhancement prompt
-                    6. **Go to Tab 2** to generate enhanced images
-                    7. **Go to Tab 3** to review (it will automatically use Phase 2 mode)
-                    
-                    **Image Reference Guide (consistent across all tabs):**
-                    - <IMAGE_0> = Character reference (from Tab 1) - ALWAYS for style/appearance
-                    - <IMAGE_1> = Green-zoned base (uploaded below) - spatial guide for where to add elements
-                    """)
-                    
                     with gr.Row():
                         with gr.Column():
                             green_base_image = gr.Image(
@@ -1236,12 +1204,6 @@ Review the failed enhancement attempts and identify what went wrong."""
             
             # Wire up all event handlers that use unified_status
             # Tab 1: Project Management
-            project_name_input.submit(
-                fn=self.set_project_name,
-                inputs=[project_name_input],
-                outputs=[project_status]
-            )
-            
             set_project_btn.click(
                 fn=self.set_project_name,
                 inputs=[project_name_input_dup],
