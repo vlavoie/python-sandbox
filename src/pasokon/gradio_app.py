@@ -566,7 +566,9 @@ Here are the failed images to review:
 {user_comment if user_comment.strip() else 'Please review these images and suggest corrections.'}
 
 Image Reference Guide:
-{image_ref_guide}"""
+{image_ref_guide}
+
+IMPORTANT: Always start your response with a brief 1-3 sentence explanation of what changes you're making to the prompt (what you're strengthening, what bans you're adding, etc.), then provide the corrected prompt in a code block."""
             
             # Get initial review
             initial_review = self.client.review_images(
@@ -651,13 +653,18 @@ Failed image files being reviewed:
                 
                 messages.append({"role": "user", "content": content})
             
-            # Add conversation history
-            for user_msg, assistant_msg in history:
-                # Skip the initial auto-generated message (all user messages are now strings)
-                if user_msg and "Here are the failed images to review:" not in user_msg:
-                    messages.append({"role": "user", "content": user_msg})
-                if assistant_msg:
-                    messages.append({"role": "assistant", "content": assistant_msg})
+            # Add conversation history EXCEPT the first exchange (already included above with images)
+            for idx, (user_msg, assistant_msg) in enumerate(history):
+                if idx == 0:
+                    # First exchange already added above with images, but include the assistant's response
+                    if assistant_msg:
+                        messages.append({"role": "assistant", "content": assistant_msg})
+                else:
+                    # Subsequent messages: add both user and assistant
+                    if user_msg:
+                        messages.append({"role": "user", "content": user_msg})
+                    if assistant_msg:
+                        messages.append({"role": "assistant", "content": assistant_msg})
             
             # Add new user message
             messages.append({"role": "user", "content": user_message})
@@ -686,19 +693,21 @@ Failed image files being reviewed:
         except Exception as e:
             return history, f"❌ Error: {str(e)}"
     
-    def extract_prompt_from_phase1_chat(self) -> str:
-        """Extract the final prompt from the Phase 1 review chat."""
+    def extract_prompt_from_phase1_chat(self) -> Tuple[str, str]:
+        """Extract the final prompt from the Phase 1 review chat and send to generation tab."""
         if not self.phase1_review_history:
-            return ""
+            return "", "❌ No review conversation found. Start a review first."
         
         # Get the last assistant message
         for user_msg, assistant_msg in reversed(self.phase1_review_history):
             if assistant_msg:
                 # Use the same cleaning logic as the client
                 from pasokon.grok_client import GrokClient
-                return GrokClient._clean_prompt_text(assistant_msg)
+                cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
+                if cleaned_prompt:
+                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab (Tab 2). You can now generate images."
         
-        return ""
+        return "", "❌ No valid prompt found in conversation history."
     
     def set_phase1_mode(self) -> str:
         """Reset to Phase 1 review mode."""
@@ -902,61 +911,10 @@ Review the failed enhancement attempts and identify what went wrong."""
                     outputs=[project_status]
                 )
                 
-                # Model selection dropdowns
-                with gr.Row():
-                    chat_model_dropdown = gr.Dropdown(
-                        choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
-                        value="grok-4.20",
-                        label="Chat Model (for prompt generation & review)",
-                        info="Used for analyzing images and generating prompts",
-                        interactive=True,
-                        allow_custom_value=True
-                    )
-                    image_model_dropdown = gr.Dropdown(
-                        choices=[
-                            "grok-imagine-image-quality",
-                            "grok-imagine-image-pro", 
-                            "grok-imagine-image-2.0",
-                            "grok-imagine-image"
-                        ],
-                        value="grok-imagine-image-quality",
-                        label="Image Generation Model",
-                        info="Used for creating FPV POV images (quality recommended)",
-                        interactive=True,
-                        allow_custom_value=True
-                    )
-                
-                model_status = gr.Textbox(label="Model Status", interactive=False, value="")
-                
-                # Update models when they change
-                chat_model_dropdown.change(
-                    fn=self.update_chat_model,
-                    inputs=[chat_model_dropdown],
-                    outputs=[model_status]
-                )
-                
-                image_model_dropdown.change(
-                    fn=self.update_image_model,
-                    inputs=[image_model_dropdown],
-                    outputs=[model_status]
-                )
-                
-                # Initialize client and fetch models
-                def init_and_fetch_models(api_key):
-                    status = self.initialize_client(api_key)
-                    chat_models, image_models = self.fetch_models()
-                    
-                    # Return updated choices and values
-                    return (
-                        status,
-                        gr.Dropdown(choices=chat_models, value=chat_models[0] if chat_models else "grok-4.20"),
-                        gr.Dropdown(choices=image_models, value=image_models[0] if image_models else "grok-imagine-image-2.0")
-                    )
-                
                 api_key_input.change(
-                    fn=init_and_fetch_models,
+                    fn=self.initialize_client,
                     inputs=[api_key_input],
-                    outputs=[api_status, chat_model_dropdown, image_model_dropdown]
+                    outputs=[api_status]
                 )
             
             # Main workflow tabs
@@ -1043,7 +1001,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                             )
                     
                     generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
-                    prompt_status = gr.Textbox(label="Status", interactive=False)
                     generated_prompt = gr.Textbox(
                         label="Generated Prompt",
                         lines=15,
@@ -1053,7 +1010,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     generate_prompt_btn.click(
                         fn=self.generate_initial_prompt,
                         inputs=[reference_image, scene_description, additional_images],
-                        outputs=[prompt_status, generated_prompt]
+                        outputs=[unified_status, generated_prompt]
                     )
                 
                 # Tab 2: Image Generation
@@ -1085,8 +1042,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                     with gr.Row():
                         generate_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
                     
-                    generation_status = gr.Textbox(label="Status", interactive=False)
-                    
                     with gr.Row():
                         output_gallery = gr.Gallery(
                             label="Generated Images",
@@ -1104,7 +1059,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     generate_images_btn.click(
                         fn=self.generate_images_batch,
                         inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
-                        outputs=[generation_status, output_gallery]
+                        outputs=[unified_status, output_gallery]
                     )
                 
                 # Tab 3: Review and Correction
@@ -1144,7 +1099,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                     )
                     
                     start_review_btn = gr.Button("🔍 Start Review", variant="primary")
-                    review_status = gr.Textbox(label="Status", interactive=False)
                     
                     # Gallery for failed image thumbnails
                     failed_images_gallery = gr.Gallery(
@@ -1172,23 +1126,15 @@ Review the failed enhancement attempts and identify what went wrong."""
                         send_review_btn = gr.Button("Send", variant="secondary")
                     
                     gr.Markdown("---")
-                    gr.Markdown("**When you're satisfied with the conversation, extract the final prompt:**")
+                    gr.Markdown("**When you're satisfied with the conversation:**")
                     
-                    extract_prompt_btn = gr.Button("📄 Extract Final Prompt from Conversation")
-                    corrected_prompt = gr.Textbox(
-                        label="Final Corrected Prompt",
-                        lines=10,
-                        interactive=True
-                    )
-                    
-                    gr.Markdown("**Use this corrected prompt in Tab 2 to regenerate images**")
-                    copy_to_gen_btn = gr.Button("📋 Copy to Generation Tab")
+                    extract_and_send_btn = gr.Button("📤 Extract Final Prompt & Send to Generation Tab", variant="primary")
                     
                     # Event handlers
                     start_review_btn.click(
                         fn=self.start_phase1_review,
                         inputs=[review_initial_comment, failed_images_upload],
-                        outputs=[review_chatbot, review_status, failed_images_gallery]
+                        outputs=[review_chatbot, unified_status, failed_images_gallery]
                     )
                     
                     def send_message(msg, history):
@@ -1199,24 +1145,18 @@ Review the failed enhancement attempts and identify what went wrong."""
                     send_review_btn.click(
                         fn=send_message,
                         inputs=[review_user_input, review_chatbot],
-                        outputs=[review_chatbot, review_user_input, review_status]
+                        outputs=[review_chatbot, review_user_input, unified_status]
                     )
                     
                     review_user_input.submit(
                         fn=send_message,
                         inputs=[review_user_input, review_chatbot],
-                        outputs=[review_chatbot, review_user_input, review_status]
+                        outputs=[review_chatbot, review_user_input, unified_status]
                     )
                     
-                    extract_prompt_btn.click(
+                    extract_and_send_btn.click(
                         fn=self.extract_prompt_from_phase1_chat,
-                        outputs=[corrected_prompt]
-                    )
-                    
-                    copy_to_gen_btn.click(
-                        fn=lambda x: x,
-                        inputs=[corrected_prompt],
-                        outputs=[prompt_to_use]
+                        outputs=[prompt_to_use, unified_status]
                     )
                 
                 # Tab 4: Phase 2 - Manual Enhancement
@@ -1254,7 +1194,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                             )
                     
                     enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt & Set Phase 2 Mode", variant="primary")
-                    enhance_status = gr.Textbox(label="Status", interactive=False, lines=8)
                     enhancement_prompt = gr.Textbox(
                         label="Enhancement Prompt (ready to use in Tab 2)",
                         lines=15,
@@ -1268,7 +1207,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     enhance_prompt_btn.click(
                         fn=self.set_phase2_mode_and_generate_prompt,
                         inputs=[green_base_image, enhancement_description],
-                        outputs=[enhance_status, enhancement_prompt]
+                        outputs=[unified_status, enhancement_prompt]
                     )
                     
                     copy_phase2_to_gen_btn.click(
@@ -1279,8 +1218,58 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                     reset_to_phase1_btn.click(
                         fn=self.set_phase1_mode,
-                        outputs=[enhance_status]
+                        outputs=[unified_status]
                     )
+            
+            # Unified Status Bar (bottom of UI)
+            gr.Markdown("---")
+            gr.Markdown("### 📊 Status & Model Selection")
+            
+            with gr.Row():
+                with gr.Column(scale=1):
+                    chat_model_dropdown = gr.Dropdown(
+                        choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
+                        value="grok-4.20",
+                        label="💬 Chat Model",
+                        info="For prompt generation & review",
+                        interactive=True,
+                        allow_custom_value=True
+                    )
+                
+                with gr.Column(scale=1):
+                    image_model_dropdown = gr.Dropdown(
+                        choices=[
+                            "grok-imagine-image-quality",
+                            "grok-imagine-image-pro", 
+                            "grok-imagine-image-2.0",
+                            "grok-imagine-image"
+                        ],
+                        value="grok-imagine-image-quality",
+                        label="🎨 Image Model",
+                        info="For image generation",
+                        interactive=True,
+                        allow_custom_value=True
+                    )
+            
+            unified_status = gr.Textbox(
+                label="System Status",
+                interactive=False,
+                lines=3,
+                value="Ready. Configure your API key above to get started."
+            )
+            
+            # Update models when they change
+            chat_model_dropdown.change(
+                fn=self.update_chat_model,
+                inputs=[chat_model_dropdown],
+                outputs=[unified_status]
+            )
+            
+            image_model_dropdown.change(
+                fn=self.update_image_model,
+                inputs=[image_model_dropdown],
+                outputs=[unified_status]
+            )
             
             # Instructions footer
             with gr.Accordion("📖 Instructions", open=False):
