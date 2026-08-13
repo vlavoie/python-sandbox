@@ -15,9 +15,12 @@ Core identity (repeat aggressively):
 Camera direction & posture lock (highest priority):
 - The camera must point in the exact direction I am looking.  
   – If I am lying flat and looking up, the camera must look **upward**. The book and ceiling should be in the upper/middle part of the frame. My chest and body should sit lower in the frame or be partially covered by the book.  
-  – Never allow the model to default to a high-angle “looking down the body” or cleavage-focused shot when the description says looking up or looking forward.
+  – If I am standing or sitting and looking down, the camera must look **downward**. The ground/floor should be in the upper/middle part of the frame. My body (legs, feet, lower torso) should appear at the BOTTOM of the frame below my eye level. This is a downward camera tilt, NOT an upside-down camera.
+  – Never flip the camera upside down. The top of the frame is always toward the direction I'm looking, and the bottom of the frame is always toward my body.
+  – Never allow the model to default to a high-angle "looking down the body" or cleavage-focused shot when the description says looking up or looking forward.
 - Repeat the exact camera direction and body orientation several times in the prompt so the model cannot drift.
-- Explicitly state: “This is not a high-angle shot looking down at my body. I am looking upward / forward as described.”
+- Explicitly state: "This is not a high-angle shot looking down at my body. I am looking upward / forward / downward as described."
+- For looking down: Explicitly state: "The camera is tilted downward. My body appears at the bottom of the frame. The ground appears in the upper portion. This is NOT an inverted or upside-down view."
 
 Body visibility:
 - Only show the exact body parts that would be visible from that specific eye position and head angle.
