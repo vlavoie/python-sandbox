@@ -305,25 +305,6 @@ class FPVPOVApp:
             print(f"Error listing projects: {e}")
             return []
     
-    def set_project_name(self, name: str) -> str:
-        """Set the project name and save state."""
-        if not name or not name.strip():
-            return "❌ Project name cannot be empty"
-        
-        # Sanitize project name
-        safe_name = "".join(c for c in name if c.isalnum() or c in ('-', '_', ' ')).strip()
-        safe_name = safe_name.replace(' ', '-')
-        
-        if not safe_name:
-            return "❌ Invalid project name"
-        
-        old_name = self.project_name
-        self.project_name = safe_name
-        
-        save_status = self.save_project_state()
-        
-        return f"✅ Project renamed: '{old_name}' → '{safe_name}'\n{save_status}"
-    
     def generate_initial_prompt(
         self,
         reference_image,
@@ -915,7 +896,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     )
                     project_status = gr.Textbox(label="Project Status", interactive=False, value="📁 Project: untitled-project")
                 
-                project_name_input.change(
+                project_name_input.submit(
                     fn=self.set_project_name,
                     inputs=[project_name_input],
                     outputs=[project_status]
