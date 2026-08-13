@@ -293,6 +293,10 @@ class FPVPOVApp:
                 aspect_ratio=aspect_ratio
             )
             
+            # Check if we got any images
+            if not image_data_list or len(image_data_list) == 0:
+                return "❌ No images were successfully generated. Check console for errors.", []
+            
             # Save to permanent directory
             saved_dir = self.save_images_permanently(
                 image_data_list=image_data_list,
@@ -316,12 +320,26 @@ class FPVPOVApp:
             self.generated_images = images
             self.current_prompt = prompt
             
-            return (
-                f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
-                f"� Project: {self.project_name}\n"
-                f"💾 Saved to: {self.project_name}/{saved_dir.name}/",
-                images
-            )
+            # Check if we got partial results
+            actual_count = len(images)
+            is_partial = actual_count < num_images
+            
+            # Build status message
+            if is_partial:
+                status_msg = (
+                    f"⚠️ Partial success: {actual_count}/{num_images} images generated (Iteration {self.iteration_count})\n"
+                    f"📁 Project: {self.project_name}\n"
+                    f"💾 Saved {actual_count} successful image(s) to: {self.project_name}/{saved_dir.name}/\n"
+                    f"⚠️ {num_images - actual_count} image(s) failed - check console for details"
+                )
+            else:
+                status_msg = (
+                    f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
+                    f"📁 Project: {self.project_name}\n"
+                    f"💾 Saved to: {self.project_name}/{saved_dir.name}/"
+                )
+            
+            return status_msg, images
             
         except Exception as e:
             return f"❌ Error generating images: {str(e)}", []

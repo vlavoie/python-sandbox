@@ -218,7 +218,7 @@ class GrokClient:
         
         def generate_single_image(index: int) -> tuple[int, bytes]:
             """Generate a single image (for parallel execution)."""
-            with httpx.Client(timeout=90.0) as client:
+            with httpx.Client(timeout=180.0) as client:
                 try:
                     start_time = time.time()
                     print(f"   🚀 Starting image {index + 1}/{num_images}...")
@@ -253,7 +253,7 @@ class GrokClient:
                 except httpx.TimeoutException:
                     print(f"\n❌ Timeout generating image {index + 1}/{num_images}")
                     raise Exception(
-                        f"Image {index + 1} generation timed out after 90 seconds.\n"
+                        f"Image {index + 1} generation timed out after 180 seconds.\n"
                         f"The Grok Imagine API might be slow or overloaded. Try again in a few minutes."
                     )
                 except httpx.HTTPStatusError as e:
@@ -273,6 +273,7 @@ class GrokClient:
         # Generate all images in parallel
         overall_start = time.time()
         images = [None] * num_images  # Pre-allocate list to maintain order
+        errors = []
         
         with ThreadPoolExecutor(max_workers=num_images) as executor:
             # Submit all tasks
@@ -280,20 +281,41 @@ class GrokClient:
             
             # Collect results as they complete
             for future in as_completed(future_to_index):
+                index = future_to_index[future]
                 try:
-                    index, image_data = future.result()
-                    images[index] = image_data
+                    idx, image_data = future.result()
+                    images[idx] = image_data
                 except Exception as e:
-                    # Re-raise the first error we encounter
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    raise e
+                    # Collect error but continue processing other images
+                    error_msg = str(e)
+                    errors.append((index + 1, error_msg))
+                    print(f"   ⚠️ Image {index + 1} failed, continuing with others...")
+        
+        # Filter out None values (failed images)
+        successful_images = [img for img in images if img is not None]
         
         overall_time = time.time() - overall_start
-        print(f"\n✨ All {num_images} images generated in {overall_time:.1f}s (avg {overall_time/num_images:.1f}s per image)\n"    f"Model: {self.image_model}\n"
-                        f"Check if the model name is correct and your API key has access to image generation."
-                    )
         
-        return images
+        if errors:
+            failed_count = len(errors)
+            success_count = len(successful_images)
+            error_summary = "\n".join([f"  • Image {idx}: {msg.split(chr(10))[0]}" for idx, msg in errors])
+            
+            if success_count == 0:
+                # All images failed
+                raise Exception(
+                    f"All {num_images} images failed to generate:\n{error_summary}"
+                )
+            else:
+                # Partial success - return successful images with warning
+                print(f"\n⚠️ {success_count}/{num_images} images generated successfully in {overall_time:.1f}s")
+                print(f"❌ {failed_count} image(s) failed:\n{error_summary}\n")
+                # Return successful images (caller will handle the partial result)
+                return successful_images
+        else:
+            # All images succeeded
+            print(f"\n✨ All {num_images} images generated in {overall_time:.1f}s (avg {overall_time/num_images:.1f}s per image)\n")
+        
         return images
     
     def review_images(
