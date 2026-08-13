@@ -972,86 +972,59 @@ Review the failed enhancement attempts and identify what went wrong."""
             with gr.Row():
                 current_project_display = gr.Markdown(f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action")
             
-            # API Key configuration
-            with gr.Accordion("⚙️ Configuration", open=True):
-                # Project name input
-                with gr.Row():
-                    project_name_input = gr.Textbox(
-                        label="Project Name",
-                        placeholder="Enter a project name (e.g., ninja-scene, pirate-ship)",
-                        value="untitled-project",
-                        info="Organizes your outputs by project. Changing this resets the iteration counter."
-                    )
-                    project_status = gr.Textbox(label="Project Status", interactive=False, value="📁 Project: untitled-project")
-                
-                project_name_input.submit(
-                    fn=self.set_project_name,
-                    inputs=[project_name_input],
-                    outputs=[project_status]
-                )
-            
             # Main workflow tabs
             with gr.Tabs():
-                # Tab 1: Initial Prompt Generation
-                with gr.Tab("1️⃣ Generate Prompt"):
-                    # Project management section
-                    with gr.Accordion("📁 Project Management", open=False):
-                        gr.Markdown("""
-                        **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
-                        
-                        Saved data includes: prompts, images, references, review mode, and more.
-                        """)
-                        
-                        with gr.Row():
-                            with gr.Column():
-                                project_name_input = gr.Textbox(
-                                    label="Project Name",
-                                    value=self.project_name,
-                                    placeholder="my-fpv-project"
-                                )
-                                set_project_btn = gr.Button("💾 Set Project Name")
-                            
-                            with gr.Column():
-                                project_selector = gr.Dropdown(
-                                    label="Load Existing Project",
-                                    choices=self.list_projects(),
-                                    value=None
-                                )
-                                load_project_btn = gr.Button("📂 Load Selected Project")
-                        
-                        project_mgmt_status = gr.Textbox(
-                            label="Project Status",
-                            interactive=False,
-                            lines=8
+                # Tab 1: Project Management
+                with gr.Tab("💾 Project Management"):
+                    gr.Markdown("### Project Configuration")
+                    gr.Markdown("Set your project name and manage saved projects")
+                    
+                    # Project name input
+                    with gr.Row():
+                        project_name_input = gr.Textbox(
+                            label="Project Name",
+                            placeholder="Enter a project name (e.g., ninja-scene, pirate-ship)",
+                            value="untitled-project",
+                            info="Organizes your outputs by project. Changing this resets the iteration counter."
                         )
-                        
-                        manual_save_btn = gr.Button("💾 Save Current State (auto-saves after each action)")
-                        refresh_projects_btn = gr.Button("🔄 Refresh Project List")
-                        
-                        # Event handlers for project management
-                        set_project_btn.click(
-                            fn=self.set_project_name,
-                            inputs=[project_name_input],
-                            outputs=[project_mgmt_status]
-                        )
-                        
-                        load_project_btn.click(
-                            fn=self.load_project_state,
-                            inputs=[project_selector],
-                            outputs=[project_mgmt_status]
-                        )
-                        
-                        manual_save_btn.click(
-                            fn=self.save_project_state,
-                            outputs=[project_mgmt_status]
-                        )
-                        
-                        refresh_projects_btn.click(
-                            fn=lambda: gr.Dropdown(choices=self.list_projects()),
-                            outputs=[project_selector]
-                        )
+                        project_status = gr.Textbox(label="Project Status", interactive=False, value="📁 Project: untitled-project")
                     
                     gr.Markdown("---")
+                    gr.Markdown("### Load & Save Projects")
+                    gr.Markdown("""
+                    **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
+                    
+                    Saved data includes: prompts, images, references, review mode, and more.
+                    """)
+                    
+                    with gr.Row():
+                        with gr.Column():
+                            project_name_input_dup = gr.Textbox(
+                                label="Project Name",
+                                value=self.project_name,
+                                placeholder="my-fpv-project"
+                            )
+                            set_project_btn = gr.Button("💾 Set Project Name")
+                        
+                        with gr.Column():
+                            project_selector = gr.Dropdown(
+                                label="Load Existing Project",
+                                choices=self.list_projects(),
+                                value=None
+                            )
+                            load_project_btn = gr.Button("📂 Load Selected Project")
+                    
+                    project_mgmt_status = gr.Textbox(
+                        label="Project Status",
+                        interactive=False,
+                        lines=8
+                    )
+                    
+                    manual_save_btn = gr.Button("💾 Save Current State (auto-saves after each action)")
+                    refresh_projects_btn = gr.Button("🔄 Refresh Project List")
+                
+                # Tab 2: Generate Prompt
+                with gr.Tab("2️⃣ Generate Prompt"):
                     gr.Markdown("### Upload reference image and describe your scene")
                     
                     with gr.Row():
@@ -1080,8 +1053,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                         interactive=True
                     )
                 
-                # Tab 2: Image Generation
-                with gr.Tab("2️⃣ Generate Images"):
+                # Tab 3: Image Generation
+                with gr.Tab("3️⃣ Generate Images"):
                     gr.Markdown("### Generate images using the prompt")
                     
                     with gr.Row():
@@ -1123,8 +1096,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                         outputs=[prompt_to_use]
                     )
                     
-                # Tab 3: Review and Correction
-                with gr.Tab("3️⃣ Review & Correct"):
+                # Tab 4: Review and Correction
+                with gr.Tab("4️⃣ Review & Correct"):
                     with gr.Row():
                         with gr.Column():
                             gr.Markdown("**Option A: Use generated images**")
@@ -1178,8 +1151,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                     # Event handlers defined after unified_status is created (see bottom of UI)
                 
-                # Tab 4: Phase 2 - Manual Enhancement
-                with gr.Tab("4️⃣ Phase 2: Enhancements"):
+                # Tab 5: Phase 2 - Manual Enhancement
+                with gr.Tab("5️⃣ Phase 2: Enhancements"):
                     gr.Markdown("### Generate Enhancement Prompts (Green Zone Method)")
                     gr.Markdown("""
                     This phase is for adding elements that often fail (like hair fringe) using the green-zone technique.
@@ -1262,21 +1235,50 @@ Review the failed enhancement attempts and identify what went wrong."""
             )
             
             # Wire up all event handlers that use unified_status
-            # Tab 1: Generate Prompt
+            # Tab 1: Project Management
+            project_name_input.submit(
+                fn=self.set_project_name,
+                inputs=[project_name_input],
+                outputs=[project_status]
+            )
+            
+            set_project_btn.click(
+                fn=self.set_project_name,
+                inputs=[project_name_input_dup],
+                outputs=[project_mgmt_status]
+            )
+            
+            load_project_btn.click(
+                fn=self.load_project_state,
+                inputs=[project_selector],
+                outputs=[project_mgmt_status]
+            )
+            
+            manual_save_btn.click(
+                fn=self.save_project_state,
+                outputs=[project_mgmt_status]
+            )
+            
+            refresh_projects_btn.click(
+                fn=lambda: gr.Dropdown(choices=self.list_projects()),
+                outputs=[project_selector]
+            )
+            
+            # Tab 2: Generate Prompt
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
                 inputs=[reference_image, scene_description, additional_images],
                 outputs=[unified_status, generated_prompt]
             )
             
-            # Tab 2: Generate Images
+            # Tab 3: Generate Images
             generate_images_btn.click(
                 fn=self.generate_images_batch,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
                 outputs=[unified_status, output_gallery]
             )
             
-            # Tab 3: Review & Correct
+            # Tab 4: Review & Correct
             def send_message(msg, history):
                 if not msg.strip():
                     return history, "", ""
@@ -1305,7 +1307,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                 outputs=[prompt_to_use, unified_status]
             )
             
-            # Tab 4: Phase 2 Enhancements
+            # Tab 5: Phase 2 Enhancements
             enhance_prompt_btn.click(
                 fn=self.set_phase2_mode_and_generate_prompt,
                 inputs=[green_base_image, enhancement_description],
