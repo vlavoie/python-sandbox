@@ -519,7 +519,15 @@ class FPVPOVApp:
         for i, img_data in enumerate(image_data_list, 1):
             img = Image.open(io.BytesIO(img_data))
             img_path = batch_dir / f"image_{i}.png"
-            img.save(img_path, 'PNG')
+            # Preserve transparency by ensuring RGBA mode for PNG
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img.save(img_path, 'PNG', optimize=True)
+            elif img.mode == 'RGB':
+                img.save(img_path, 'PNG', optimize=True)
+            else:
+                # Convert to RGBA to preserve any transparency
+                img = img.convert('RGBA')
+                img.save(img_path, 'PNG', optimize=True)
         
         # Save prompt to text file
         prompt_file = batch_dir / "prompt.txt"
@@ -582,7 +590,15 @@ class FPVPOVApp:
                 
                 # Save to temp file for Gradio display
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                img.save(temp_file.name, 'PNG')
+                # Preserve transparency by ensuring RGBA mode for PNG
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img.save(temp_file.name, 'PNG', optimize=True)
+                elif img.mode == 'RGB':
+                    img.save(temp_file.name, 'PNG', optimize=True)
+                else:
+                    # Convert to RGBA to preserve any transparency
+                    img = img.convert('RGBA')
+                    img.save(temp_file.name, 'PNG', optimize=True)
                 temp_file.close()
                 
                 images.append(temp_file.name)
