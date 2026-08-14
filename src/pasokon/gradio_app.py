@@ -521,7 +521,7 @@ class FPVPOVApp:
             # Auto-save project state
             self.save_project_state()
             
-            return "✅ Prompt generated successfully!", self.current_prompt, gr.update(selected=2)
+            return "✅ Prompt generated successfully!", self.current_prompt, gr.update(selected="tab_generate_images")
             
         except Exception as e:
             error_msg = str(e)
@@ -900,7 +900,7 @@ Failed image files being reviewed:
                 from pasokon.grok_client import GrokClient
                 cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
                 if cleaned_prompt:
-                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab. Switched to Generate Images tab.", gr.update(selected=2)
+                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab. Switched to Generate Images tab.", gr.update(selected="tab_generate_images")
         
         return "", "❌ No valid prompt found in conversation history.", gr.update()
     
@@ -948,17 +948,17 @@ Failed image files being reviewed:
         After generating images in Tab 2, come back to Tab 3 to review them.
         """
         if not self.client:
-            return "❌ Please configure your API key first.", "", self._get_project_display_string()
-        
+            return "❌ Please configure your API key first.", "", self._get_project_display_string(), gr.update()
+
         if not greenzone_image:
-            return "❌ Please upload the green-zoned base image.", "", self._get_project_display_string()
-        
+            return "❌ Please upload the green-zoned base image.", "", self._get_project_display_string(), gr.update()
+
         if not self.reference_image_path:
-            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", "", self._get_project_display_string()
-        
+            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", "", self._get_project_display_string(), gr.update()
+
         if not enhancement_description.strip():
-            return "❌ Please provide enhancement description.", "", self._get_project_display_string()
-        
+            return "❌ Please provide enhancement description.", "", self._get_project_display_string(), gr.update()
+
         try:
             # Save greenzone image and set Phase 2 mode
             self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
@@ -979,33 +979,40 @@ Context:
             
             # Generate enhancement prompt
             self.current_scene = phase2_scene
+            phase2_skill_prefix = """PHASE 2 ENHANCEMENT MODE
+You are generating a Phase 2 enhancement prompt, not a standard scene prompt.
+
+In Phase 2:
+- <IMAGE_0> is the character reference (style/appearance lock — same as Phase 1)
+- <IMAGE_1> is a base image with green/pink zones painted on it marking exactly where new elements must be added
+- The generated prompt must instruct the image model to: add the specified elements only inside the marked zones, completely erase all green/pink paint so no trace remains, maintain exact character appearance from <IMAGE_0>, and use <IMAGE_1> as the spatial/compositional base
+
+Generate the prompt accordingly.
+
+---
+
+"""
             self.current_prompt = self.client.generate_prompt(
                 reference_image=self.reference_image_path,  # <IMAGE_0> = character
                 scene_description=phase2_scene,
-                skill_content=self.prompt_skill,
+                skill_content=phase2_skill_prefix + self.prompt_skill,
                 additional_images=[self.greenzone_image_path]  # <IMAGE_1> = greenzone
             )
             
-            status = """✅ Phase 2 enhancement prompt generated!
-
-📋 Next steps:
-1. Copy this prompt to Tab 2 (Generation)
-2. Generate enhanced images in Tab 2
-3. Review results in Tab 3 (it will automatically use Phase 2 mode)
+            status = """✅ Phase 2 enhancement prompt generated! Switching to Generate Images tab.
 
 🎯 Phase 2 mode active - Tab 3 will use:
    • <IMAGE_0> = Character reference (style lock)
    • <IMAGE_1> = Green-zoned base (spatial guide)"""
-            
+
             # Auto-save project state
             self.save_project_state()
-            
-            return status, self.current_prompt, self._get_project_display_string()
+
+            return status, self.current_prompt, self._get_project_display_string(), gr.update(selected="tab_generate_images")
             
         except Exception as e:
-            return f"❌ Error: {str(e)}", "", self._get_project_display_string()
-    
-    
+            return f"❌ Error: {str(e)}", "", self._get_project_display_string(), gr.update()
+
     def review_enhancement(
         self,
         green_base_image,
@@ -1134,7 +1141,7 @@ Review the failed enhancement attempts and identify what went wrong."""
             main_tabs = gr.Tabs()
             with main_tabs:
                 # Tab 1: Project Management
-                with gr.Tab("💾 Project Management"):
+                with gr.Tab("💾 Project Management", id="tab_project"):
                     gr.Markdown("### Load & Save Projects")
                     gr.Markdown("""
                     **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
@@ -1166,7 +1173,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     )
                 
                 # Tab 2: Generate Prompt
-                with gr.Tab("2️⃣ Generate Prompt"):
+                with gr.Tab("2️⃣ Generate Prompt", id="tab_generate_prompt"):
                     gr.Markdown("### Upload reference image and describe your scene")
                     
                     with gr.Row():
@@ -1192,7 +1199,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
                 
                 # Tab 3: Image Generation
-                with gr.Tab("3️⃣ Generate Images"):
+                with gr.Tab("3️⃣ Generate Images", id="tab_generate_images"):
                     gr.Markdown("### Generate images using the prompt")
                     
                     with gr.Row():
@@ -1229,7 +1236,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                         )
                     
                 # Tab 4: Review and Correction
-                with gr.Tab("4️⃣ Review & Correct"):
+                with gr.Tab("4️⃣ Review & Correct", id="tab_review"):
                     gr.Markdown("""### Review Failed Images and Get Corrections
                     
 **How it works:**
@@ -1287,7 +1294,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                     # Event handlers defined after unified_status is created (see bottom of UI)
                 
                 # Tab 5: Phase 2 - Manual Enhancement
-                with gr.Tab("5️⃣ Phase 2: Enhancements"):
+                with gr.Tab("5️⃣ Phase 2: Enhancements", id="tab_phase2"):
                     with gr.Row():
                         with gr.Column():
                             green_base_image = gr.Image(
@@ -1303,14 +1310,7 @@ Review the failed enhancement attempts and identify what went wrong."""
                                 lines=8
                             )
                     
-                    enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt & Set Phase 2 Mode", variant="primary")
-                    enhancement_prompt = gr.Textbox(
-                        label="Enhancement Prompt (ready to use in Tab 2)",
-                        lines=15,
-                        interactive=True
-                    )
-                    
-                    copy_phase2_to_gen_btn = gr.Button("📋 Copy to Generation Tab (Tab 2)")
+                    enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt", variant="primary")
                     reset_to_phase1_btn = gr.Button("🔄 Reset to Phase 1 Mode (for regular reviews)")
                     
                     # Event handlers defined after unified_status is created (see bottom of UI)
@@ -1453,15 +1453,9 @@ Review the failed enhancement attempts and identify what went wrong."""
             enhance_prompt_btn.click(
                 fn=self.set_phase2_mode_and_generate_prompt,
                 inputs=[green_base_image, enhancement_description],
-                outputs=[unified_status, enhancement_prompt, current_project_display]
+                outputs=[unified_status, prompt_to_use, current_project_display, main_tabs]
             )
-            
-            copy_phase2_to_gen_btn.click(
-                fn=lambda x: x,
-                inputs=[enhancement_prompt],
-                outputs=[prompt_to_use]
-            )
-            
+
             reset_to_phase1_btn.click(
                 fn=self.set_phase1_mode,
                 outputs=[unified_status, current_project_display]
