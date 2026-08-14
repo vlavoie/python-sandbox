@@ -234,33 +234,21 @@ class FPVPOVApp:
             temp_path = temp_file.name
             temp_file.close()
             
-            # Use PIL to properly preserve transparency when saving
-            if suffix in ['.png', '.jpg', '.jpeg', '.webp']:
+            if suffix == '.png':
+                # Copy PNG directly — re-encoding through PIL can corrupt transparency
+                shutil.copy(source_path, temp_path)
+            elif suffix in ['.jpg', '.jpeg']:
                 img = Image.open(source_path)
-                
-                if suffix == '.png':
-                    # Preserve transparency for PNG
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    background = Image.new('RGB', img.size, (255, 255, 255))
                     if img.mode == 'P':
                         img = img.convert('RGBA')
-                    elif img.mode not in ('RGBA', 'LA', 'RGB'):
-                        img = img.convert('RGBA')
-                    img.save(temp_path, 'PNG', optimize=True)
-                elif suffix in ['.jpg', '.jpeg']:
-                    # Convert to RGB for JPEG
-                    if img.mode in ('RGBA', 'LA', 'P'):
-                        background = Image.new('RGB', img.size, (255, 255, 255))
-                        if img.mode == 'P':
-                            img = img.convert('RGBA')
-                        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                        img = background
-                    elif img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    img.save(temp_path, 'JPEG', quality=95, optimize=True)
-                else:
-                    # For other formats (webp, etc.), preserve as-is
-                    img.save(temp_path)
+                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img.save(temp_path, 'JPEG', quality=95, optimize=True)
             else:
-                # For unknown formats, just copy
                 shutil.copy(source_path, temp_path)
             
             return temp_path
@@ -306,21 +294,12 @@ class FPVPOVApp:
             # Create destination path
             dest_path = references_dir / f"{image_type}{suffix}"
             
-            # Use PIL to properly preserve transparency when copying
-            img = Image.open(image_path)
-            
-            # Determine save format based on extension
-            if suffix in ['.png']:
-                # Preserve transparency for PNG
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                elif img.mode not in ('RGBA', 'LA', 'RGB'):
-                    img = img.convert('RGBA')
-                img.save(dest_path, 'PNG', optimize=True)
+            if suffix == '.png':
+                # Copy PNG directly — re-encoding through PIL can corrupt transparency
+                shutil.copy(image_path, dest_path)
             elif suffix in ['.jpg', '.jpeg']:
-                # Convert to RGB for JPEG (no transparency support)
+                img = Image.open(image_path)
                 if img.mode in ('RGBA', 'LA', 'P'):
-                    # Create white background
                     background = Image.new('RGB', img.size, (255, 255, 255))
                     if img.mode == 'P':
                         img = img.convert('RGBA')
@@ -330,7 +309,6 @@ class FPVPOVApp:
                     img = img.convert('RGB')
                 img.save(dest_path, 'JPEG', quality=95, optimize=True)
             else:
-                # For other formats, just copy
                 shutil.copy(image_path, dest_path)
             
             return str(dest_path)
