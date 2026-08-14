@@ -219,20 +219,62 @@ class FPVPOVApp:
         if file is None:
             return None
         
-        # Create a temp file
-        suffix = Path(file.name).suffix if hasattr(file, 'name') else '.jpg'
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-        
-        # Copy the file
-        if isinstance(file, str):
-            # It's already a path
-            shutil.copy(file, temp_file.name)
-        else:
-            # It's a file object
-            shutil.copy(file.name, temp_file.name)
-        
-        temp_file.close()
-        return temp_file.name
+        try:
+            # Get the source path
+            if isinstance(file, str):
+                source_path = file
+            else:
+                source_path = file.name
+            
+            # Get file extension
+            suffix = Path(source_path).suffix.lower() if Path(source_path).suffix else '.jpg'
+            
+            # Create a temp file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            temp_path = temp_file.name
+            temp_file.close()
+            
+            # Use PIL to properly preserve transparency when saving
+            if suffix in ['.png', '.jpg', '.jpeg', '.webp']:
+                img = Image.open(source_path)
+                
+                if suffix == '.png':
+                    # Preserve transparency for PNG
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        img.save(temp_path, 'PNG', optimize=True)
+                    elif img.mode == 'RGB':
+                        img.save(temp_path, 'PNG', optimize=True)
+                    else:
+                        img = img.convert('RGBA')
+                        img.save(temp_path, 'PNG', optimize=True)
+                elif suffix in ['.jpg', '.jpeg']:
+                    # Convert to RGB for JPEG
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                        img = background
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    img.save(temp_path, 'JPEG', quality=95, optimize=True)
+                else:
+                    # For other formats (webp, etc.), preserve as-is
+                    img.save(temp_path)
+            else:
+                # For unknown formats, just copy
+                shutil.copy(source_path, temp_path)
+            
+            return temp_path
+        except Exception as e:
+            print(f"Warning: Could not save uploaded file: {e}")
+            # Fallback to simple copy
+            suffix = Path(file.name if hasattr(file, 'name') else file).suffix or '.jpg'
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            source = file if isinstance(file, str) else file.name
+            shutil.copy(source, temp_file.name)
+            temp_file.close()
+            return temp_file.name
     
     def _get_project_metadata_path(self, project_name: str = None) -> Path:
         """Get the path to the project metadata file."""
@@ -258,14 +300,42 @@ class FPVPOVApp:
             references_dir = project_dir / "references"
             references_dir.mkdir(parents=True, exist_ok=True)
             
-            # Get file extension
-            suffix = Path(image_path).suffix or '.jpg'
+            # Get file extension and determine format
+            suffix = Path(image_path).suffix.lower()
+            if not suffix:
+                suffix = '.jpg'
             
             # Create destination path
             dest_path = references_dir / f"{image_type}{suffix}"
             
-            # Copy the file
-            shutil.copy(image_path, dest_path)
+            # Use PIL to properly preserve transparency when copying
+            img = Image.open(image_path)
+            
+            # Determine save format based on extension
+            if suffix in ['.png']:
+                # Preserve transparency for PNG
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img.save(dest_path, 'PNG', optimize=True)
+                elif img.mode == 'RGB':
+                    img.save(dest_path, 'PNG', optimize=True)
+                else:
+                    img = img.convert('RGBA')
+                    img.save(dest_path, 'PNG', optimize=True)
+            elif suffix in ['.jpg', '.jpeg']:
+                # Convert to RGB for JPEG (no transparency support)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    # Create white background
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    if img.mode == 'P':
+                        img = img.convert('RGBA')
+                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                    img = background
+                elif img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img.save(dest_path, 'JPEG', quality=95, optimize=True)
+            else:
+                # For other formats, just copy
+                shutil.copy(image_path, dest_path)
             
             return str(dest_path)
         except Exception as e:
@@ -735,23 +805,10 @@ Failed image files being reviewed:
 {image_list}"""
             
             # Build display message for chat history (just the user's actual comment)
-            user_display_msg_text = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
+            user_display_msg = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
             
-            # Collect all images being sent to API for thumbnail display
-            thumbnail_images = []
-            if reference_image:
-                thumbnail_images.append(reference_image)
-            if additional_images:
-                thumbnail_images.extend(additional_images)
-            thumbnail_images.extend(images_to_review)
-            
-            # Initialize chat history with multimodal format (text + image thumbnails)
+            # Initialize chat history (Gradio Chatbot expects tuple of strings)
             # Show only the user's actual message in the UI, not the full system prompt
-            user_display_msg = {
-                "text": user_display_msg_text,
-                "files": thumbnail_images
-            }
-            
             self.phase1_review_history = [
                 (user_display_msg, initial_review)
             ]
