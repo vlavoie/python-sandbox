@@ -21,16 +21,23 @@ class ReviewHandler(ProjectState):
         if self.review_mode != "phase2":
             return self.review_skill
         prefix = """PHASE 2 REVIEW MODE — IMAGE ASSIGNMENT OVERRIDE
-The image assignments below are FIXED for this session. Any conflicting convention in the skill (e.g. "IMAGE_0 = green-marked base") must be IGNORED.
+The image assignments below are FIXED for this session. Any conflicting convention in the skill must be IGNORED.
 
 - <IMAGE_0> = CHARACTER REFERENCE — lock all style, appearance, hair color and identity to this image
-- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the spatial base with green/pink zones showing where elements must be added
+- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the spatial base to modify surgically
 
-When reviewing failed images:
-- Check that elements were added only inside the green/pink zones on <IMAGE_1>
-- Check that appearance/style is locked to <IMAGE_0>
-- Check that all green/pink paint was completely erased
-When writing a corrected prompt, always keep <IMAGE_0> = character reference and <IMAGE_1> = green-marked base. Do NOT swap them.
+CRITICAL PRESERVATION RULE: <IMAGE_1> must be treated as a canvas that must remain pixel-identical OUTSIDE the green/pink zones. The rest of the composition — background, character body, existing scene elements — must be completely untouched. A failed image that alters anything outside the green zones (changed background, moved objects, different pose, recolored areas) is a primary failure, even if the added element itself looks correct.
+
+When reviewing failed images, check in this order:
+1. Did the image preserve everything outside the green zones exactly as in <IMAGE_1>? (Most important — if not, the entire base was regenerated instead of surgically modified)
+2. Were elements added ONLY inside the green/pink zones?
+3. Was all green/pink paint completely erased?
+4. Is appearance/style locked to <IMAGE_0>?
+
+When writing a corrected prompt, always:
+- Keep <IMAGE_0> = character reference and <IMAGE_1> = green-marked base. Do NOT swap them.
+- Explicitly instruct to use <IMAGE_1> as the unmodified spatial base and preserve all areas outside the marked zones exactly as shown.
+- Emphasize that this is a surgical local addition, not a full image regeneration.
 
 ---
 
@@ -75,12 +82,13 @@ When writing a corrected prompt, always keep <IMAGE_0> = character reference and
 
 Context:
 - <IMAGE_0> is the character reference for style/appearance (SAME as Phase 1)
-- <IMAGE_1> is the green-zoned base image marking where to add elements
-- Only add inside green zones on <IMAGE_1>
-- Erase all green paint afterward
-- Lock style to <IMAGE_0>
+- <IMAGE_1> is the green-zoned base image — the canvas to modify surgically
+- ONLY add elements inside the green/pink zones on <IMAGE_1>
+- Everything OUTSIDE the green zones in <IMAGE_1> must remain completely unchanged (background, body, scene composition)
+- Erase all green/pink paint afterward so no trace remains
+- Lock style and appearance to <IMAGE_0>
 
-Review the failed enhancement attempts."""
+A primary failure mode is when the model regenerates the entire image instead of making a surgical local addition — watch for this in the failed images."""
                 mode_label = "Phase 2 Enhancement"
             else:
                 reference_image = self.reference_image_path
@@ -88,32 +96,17 @@ Review the failed enhancement attempts."""
                 scene_description = self.current_scene
                 mode_label = "Phase 1"
 
+            user_display_msg = user_comment.strip() if user_comment.strip() else "Review these"
+
             self.phase1_review_context = {
                 "failed_images": images_to_review,
                 "original_prompt": self.current_prompt,
                 "scene_description": scene_description,
                 "reference_image": reference_image,
                 "additional_images": additional_images,
-                "review_mode": self.review_mode
+                "review_mode": self.review_mode,
+                "user_initial_comment": user_display_msg,
             }
-
-            image_ref_guide = "- <IMAGE_0> = Character reference (for style/appearance lock)"
-            if self.review_mode == 'phase2':
-                image_ref_guide += "\n- <IMAGE_1> = Green-zoned base (spatial guide for enhancements)"
-            elif additional_images:
-                image_ref_guide += f"\n- <IMAGE_1>+ = Additional characters ({len(additional_images)} provided)"
-            image_ref_guide += "\n- Failed images = Analyzed by AI (refer to as 'failed image 1', 'failed image 2', etc.)"
-
-            user_initial_msg = f"""[{mode_label} Review]
-
-Here are the failed images to review:
-
-{user_comment if user_comment.strip() else 'Please review these images and suggest corrections.'}
-
-Image Reference Guide:
-{image_ref_guide}
-
-IMPORTANT: Always start your response with a brief 1-3 sentence explanation of what changes you're making to the prompt (what you're strengthening, what bans you're adding, etc.), then provide the corrected prompt in a code block."""
 
             initial_review = self.client.review_images(
                 failed_images=images_to_review,
@@ -121,16 +114,10 @@ IMPORTANT: Always start your response with a brief 1-3 sentence explanation of w
                 scene_description=scene_description,
                 reference_image=reference_image,
                 skill_content=self._get_review_skill(),
-                additional_images=additional_images
+                additional_images=additional_images,
+                user_comment=user_display_msg,
+                review_mode=self.review_mode,
             )
-
-            image_list = "\n".join([f"  • {Path(img).name}" for img in images_to_review])
-            user_initial_msg_with_files = f"""{user_initial_msg}
-
-Failed image files being reviewed:
-{image_list}"""  # noqa: F841 — kept for potential future use
-
-            user_display_msg = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
 
             self.phase1_review_history = [
                 {"role": "user", "content": user_display_msg},
@@ -172,31 +159,49 @@ Failed image files being reviewed:
             if self.phase1_review_context:
                 content = []
 
-                if self.phase1_review_context.get("reference_image"):
+                ref = self.phase1_review_context.get("reference_image")
+                if ref:
+                    content.append({"type": "text", "text": "Character reference (IMAGE_0):"})
                     content.append({
                         "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase1_review_context['reference_image'])}"
-                        }
+                        "image_url": {"url": f"data:image/jpeg;base64,{self.client._encode_image(ref)}"}
                     })
 
-                for img_path in self.phase1_review_context.get("failed_images", []):
+                for idx, img_path in enumerate(self.phase1_review_context.get("additional_images") or [], 1):
+                    if review_mode == "phase2" and idx == 1:
+                        label = "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
+                    else:
+                        label = f"Additional reference (IMAGE_{idx}):"
+                    content.append({"type": "text", "text": label})
                     content.append({
                         "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"
-                        }
+                        "image_url": {"url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"}
+                    })
+
+                for i, img_path in enumerate(self.phase1_review_context.get("failed_images", []), 1):
+                    content.append({"type": "text", "text": f"Failed image {i}:"})
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"}
                     })
 
                 content.append({
                     "type": "text",
-                    "text": f"Original prompt: {self.phase1_review_context.get('original_prompt', '')}\n\nScene: {self.phase1_review_context.get('scene_description', '')}"
+                    "text": f"Original prompt:\n```\n{self.phase1_review_context.get('original_prompt', '')}\n```"
                 })
+                content.append({
+                    "type": "text",
+                    "text": f"Scene description:\n{self.phase1_review_context.get('scene_description', '')}"
+                })
+
+                initial_comment = self.phase1_review_context.get("user_initial_comment", "")
+                if initial_comment:
+                    content.append({"type": "text", "text": f"User's initial feedback:\n{initial_comment}"})
 
                 messages.append({"role": "user", "content": content})
 
-            # Skip the first user message — its full context is already in the system + user
-            # messages built above with images. Only add the initial assistant response onward.
+            # Skip the first user message from history — it is already embedded in the
+            # rebuilt context above as "User's initial feedback".
             skip_first_user = True
             for msg in history:
                 if skip_first_user and msg["role"] == "user":

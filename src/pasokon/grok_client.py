@@ -397,78 +397,52 @@ class GrokClient:
         scene_description: str,
         reference_image: str,
         skill_content: str,
-        additional_images: Optional[List[str]] = None
+        additional_images: Optional[List[str]] = None,
+        user_comment: str = "",
+        review_mode: str = "phase1"
     ) -> str:
-        """Review failed images and generate a corrected prompt.
-        
-        Args:
-            failed_images: List of paths to failed generated images.
-            original_prompt: The prompt that produced the failed images.
-            scene_description: Original scene description.
-            reference_image: Path to the character reference image.
-            skill_content: Content of the fpv-pov-review.md skill.
-            additional_images: Optional list of additional reference images.
-            
-        Returns:
-            Corrected prompt for Grok Imagine.
-        """
-        # Prepare the messages with all images
-        # IMPORTANT: Character reference MUST be <IMAGE_0> for consistency with initial prompt generation
-        content = [
-            {"type": "text", "text": skill_content},
-            {"type": "text", "text": "\n\nCharacter reference (<IMAGE_0>):"}
-        ]
-        
-        # Add character reference FIRST (becomes <IMAGE_0>)
+        """Review failed images and generate a corrected prompt."""
+        content = [{"type": "text", "text": "Character reference (IMAGE_0):"}]
+
         content.append({
             "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"
-            }
+            "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"}
         })
-        
-        # Add additional images if provided (become <IMAGE_1>, <IMAGE_2>, etc.)
+
         if additional_images:
             for idx, img_path in enumerate(additional_images, start=1):
-                content.append({
-                    "type": "text",
-                    "text": f"\n\nAdditional reference (<IMAGE_{idx}>):"
-                })
+                if review_mode == "phase2" and idx == 1:
+                    label = "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
+                else:
+                    label = f"Additional reference (IMAGE_{idx}):"
+                content.append({"type": "text", "text": label})
                 content.append({
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
-                    }
+                    "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"}
                 })
-        
-        # Add failed images AFTER references (for visual comparison only, not referenced by index)
-        content.append({"type": "text", "text": "\n\nFailed generated images (for diagnosis):"})
-        for img_path in failed_images:
+
+        for i, img_path in enumerate(failed_images, 1):
+            content.append({"type": "text", "text": f"Failed image {i}:"})
             content.append({
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"
-                }
+                "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"}
             })
-        
-        # Add original prompt and scene
+
         content.append({
             "type": "text",
-            "text": f"\n\nOriginal prompt that produced these images:\n```\n{original_prompt}\n```"
+            "text": f"Original prompt that produced these images:\n```\n{original_prompt}\n```"
         })
-        content.append({
-            "type": "text",
-            "text": f"\n\nOriginal scene description:\n{scene_description}"
-        })
-        
+        content.append({"type": "text", "text": f"Scene description:\n{scene_description}"})
+
+        if user_comment:
+            content.append({"type": "text", "text": f"User feedback:\n{user_comment}"})
+
         with httpx.Client(timeout=60.0) as client:
             payload = {
                 "model": self.chat_model,
                 "messages": [
-                    {
-                        "role": "user",
-                        "content": content
-                    }
+                    {"role": "system", "content": skill_content},
+                    {"role": "user", "content": content},
                 ],
                 "temperature": 0.7,
             }
