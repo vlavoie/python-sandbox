@@ -15,6 +15,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from .grok_client import GrokClient
+from .review_handler import ReviewHandler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -26,53 +27,19 @@ if sys.platform == 'win32':
     os.environ.setdefault('PYTHONUTF8', '1')
 
 
-class FPVPOVApp:
+class FPVPOVApp(ReviewHandler):
     """Gradio app for automating FPV POV image generation."""
-    
+
     def __init__(self):
         """Initialize the app."""
-        self.client = None
-        self.current_prompt = ""
-        self.current_scene = ""
-        self.reference_image_path = None
-        self.additional_images_paths = []
-        self.generated_images = []
-        self.iteration_count = 0
-        self.project_name = "untitled-project"
-        
-        # Review chat histories (Tab 3 handles both Phase 1 and Phase 2 reviews)
-        self.phase1_review_history = []
-        self.phase1_review_context = {}
-        
-        # Phase 2 context (for enhancement generation in Tab 4)
-        self.greenzone_image_path = None
-        self.current_phase2_description = ""
-        self.review_mode = "phase1"  # or "phase2" - controls image ordering in Tab 3
-        
+        super().__init__()
+
         # Model lists
+        self.client = None
         self.available_chat_models = []
         self.available_image_models = []
         self.all_models = []
-        
-        # Output directory for saved images
-        self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
-        self.output_dir.mkdir(exist_ok=True)
-        
-        # Load skill files with explicit UTF-8 encoding
-        self.skill_dir = Path(__file__).parent.parent.parent
-        try:
-            with open(self.skill_dir / "fpv-pov-image.md", "r", encoding='utf-8', errors='replace') as f:
-                self.prompt_skill = f.read()
-            with open(self.skill_dir / "fpv-pov-review.md", "r", encoding='utf-8', errors='replace') as f:
-                self.review_skill = f.read()
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Skill files not found. Please ensure fpv-pov-image.md and fpv-pov-review.md "
-                f"are in the project root directory: {self.skill_dir}"
-            ) from e
-        except Exception as e:
-            raise Exception(f"Error loading skill files: {e}") from e
-        
+
         # Try to auto-load the last project
         try:
             load_results = self.load_project_state()
@@ -156,329 +123,6 @@ class FPVPOVApp:
             self.client.image_model = model_name
             return f"✅ Image model updated to: {model_name}"
         return "❌ Client not initialized"
-    
-    def _get_project_display_string(self) -> str:
-        """Generate the current project display string for the top bar."""
-        return f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action"
-    
-    def clear_state(self):
-        """Clear all project state variables."""
-        self.current_prompt = ""
-        self.current_scene = ""
-        self.reference_image_path = None
-        self.additional_images_paths = []
-        self.generated_images = []
-        self.iteration_count = 0
-        self.phase1_review_history = []
-        self.phase1_review_context = {}
-        self.greenzone_image_path = None
-        self.current_phase2_description = ""
-        self.review_mode = "phase1"
-    
-    def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str, List]:
-        """Set the project name and reset iteration count."""
-        if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, []
-        
-        # Sanitize project name (remove special characters)
-        sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
-        sanitized = sanitized.strip().replace(' ', '-').lower()
-        
-        if sanitized != self.project_name:
-            # Check if this is a new project (doesn't exist yet)
-            metadata_path = self.output_dir / sanitized / ".project_metadata.json"
-            is_new_project = not metadata_path.exists()
-            
-            if is_new_project:
-                # New project - clear all state
-                self.clear_state()
-            
-            self.project_name = sanitized
-            status_msg = f"✅ Project set to: {sanitized}"
-            if is_new_project:
-                status_msg += " (New project - state cleared)"
-            
-            # Return cleared UI values for new project, or current values for existing project
-            return (
-                status_msg,
-                self._get_project_display_string(),
-                "" if is_new_project else self.current_prompt,
-                [] if is_new_project else self.generated_images,
-                None if is_new_project else self.reference_image_path,
-                "" if is_new_project else self.current_scene,
-                [] if is_new_project else self.additional_images_paths,
-                [] if is_new_project else self.phase1_review_history,
-                None if is_new_project else self.greenzone_image_path,
-                "" if is_new_project else self.current_phase2_description,
-                [] if is_new_project else self.generated_images  # output_gallery
-            )
-        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.current_phase2_description, self.generated_images
-    
-    def save_uploaded_file(self, file) -> Optional[str]:
-        """Save an uploaded file to a temporary location."""
-        if file is None:
-            return None
-        
-        try:
-            # Get the source path
-            if isinstance(file, str):
-                source_path = file
-            else:
-                source_path = file.name
-            
-            # Get file extension
-            suffix = Path(source_path).suffix.lower() if Path(source_path).suffix else '.jpg'
-            
-            # Create a temp file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            temp_path = temp_file.name
-            temp_file.close()
-            
-            if suffix == '.png':
-                # Copy PNG directly — re-encoding through PIL can corrupt transparency
-                shutil.copy(source_path, temp_path)
-            elif suffix in ['.jpg', '.jpeg']:
-                img = Image.open(source_path)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(temp_path, 'JPEG', quality=95, optimize=True)
-            else:
-                shutil.copy(source_path, temp_path)
-            
-            return temp_path
-        except Exception as e:
-            print(f"Warning: Could not save uploaded file: {e}")
-            # Fallback to simple copy
-            suffix = Path(file.name if hasattr(file, 'name') else file).suffix or '.jpg'
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            source = file if isinstance(file, str) else file.name
-            shutil.copy(source, temp_file.name)
-            temp_file.close()
-            return temp_file.name
-    
-    def _get_project_metadata_path(self, project_name: str = None) -> Path:
-        """Get the path to the project metadata file."""
-        proj_name = project_name or self.project_name
-        project_dir = self.output_dir / proj_name
-        return project_dir / ".project_metadata.json"
-    
-    def _copy_image_to_project(self, image_path: str, image_type: str) -> str:
-        """Copy an image to the project's references directory.
-        
-        Args:
-            image_path: Path to the source image
-            image_type: Type of image (e.g., 'reference', 'additional_0', 'greenzone')
-            
-        Returns:
-            Path to the copied image in the project directory
-        """
-        if not image_path or not Path(image_path).exists():
-            return image_path
-        
-        try:
-            project_dir = self.output_dir / self.project_name
-            references_dir = project_dir / "references"
-            references_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Get file extension and determine format
-            suffix = Path(image_path).suffix.lower()
-            if not suffix:
-                suffix = '.jpg'
-            
-            # Create destination path
-            dest_path = references_dir / f"{image_type}{suffix}"
-            
-            if suffix == '.png':
-                # Copy PNG directly — re-encoding through PIL can corrupt transparency
-                shutil.copy(image_path, dest_path)
-            elif suffix in ['.jpg', '.jpeg']:
-                img = Image.open(image_path)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(dest_path, 'JPEG', quality=95, optimize=True)
-            else:
-                shutil.copy(image_path, dest_path)
-            
-            return str(dest_path)
-        except Exception as e:
-            print(f"Warning: Could not copy {image_type} to project directory: {e}")
-            return image_path
-    
-    def save_project_state(self) -> str:
-        """Save current project state to disk for persistence across sessions."""
-        try:
-            project_dir = self.output_dir / self.project_name
-            project_dir.mkdir(parents=True, exist_ok=True)
-            
-            metadata_path = self._get_project_metadata_path()
-            
-            # Copy reference images to project directory for persistence
-            saved_reference_image_path = None
-            if self.reference_image_path:
-                saved_reference_image_path = self._copy_image_to_project(
-                    self.reference_image_path, "character_reference"
-                )
-            
-            saved_additional_images_paths = []
-            if self.additional_images_paths:
-                for idx, img_path in enumerate(self.additional_images_paths):
-                    saved_path = self._copy_image_to_project(
-                        img_path, f"additional_{idx}"
-                    )
-                    saved_additional_images_paths.append(saved_path)
-            
-            saved_greenzone_image_path = None
-            if self.greenzone_image_path:
-                saved_greenzone_image_path = self._copy_image_to_project(
-                    self.greenzone_image_path, "greenzone_base"
-                )
-            
-            state = {
-                "project_name": self.project_name,
-                "current_prompt": self.current_prompt,
-                "current_scene": self.current_scene,
-                "reference_image_path": saved_reference_image_path,
-                "additional_images_paths": saved_additional_images_paths,
-                "generated_images": self.generated_images,
-                "iteration_count": self.iteration_count,
-                "review_mode": self.review_mode,
-                "greenzone_image_path": saved_greenzone_image_path,
-                "current_phase2_description": self.current_phase2_description,
-                "phase1_review_history": self.phase1_review_history,
-                "phase1_review_context": self.phase1_review_context,
-                "last_saved": datetime.now().isoformat(),
-            }
-            
-            with open(metadata_path, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=2)
-            
-            # Also save a "last project" marker
-            last_project_path = self.output_dir / ".last_project.txt"
-            with open(last_project_path, 'w') as f:
-                f.write(self.project_name)
-            
-            # Count saved images
-            saved_ref_count = 1 if saved_reference_image_path else 0
-            saved_additional_count = len(saved_additional_images_paths)
-            saved_greenzone_count = 1 if saved_greenzone_image_path else 0
-            total_refs = saved_ref_count + saved_additional_count + saved_greenzone_count
-            
-            return f"✅ Project '{self.project_name}' saved ({total_refs} reference image(s) backed up)"
-        except Exception as e:
-            return f"⚠️ Could not save project: {str(e)}"
-    
-    def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str, List]:
-        """Load project state from disk."""
-        # Clear state before loading to ensure clean slate
-        self.clear_state()
-        
-        try:
-            # If no project specified, try to load the last project
-            if not project_name:
-                last_project_path = self.output_dir / ".last_project.txt"
-                if last_project_path.exists():
-                    project_name = last_project_path.read_text().strip()
-                else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, []
-            
-            metadata_path = self._get_project_metadata_path(project_name)
-            
-            if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, []
-            
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                state = json.load(f)
-            
-            # Restore state
-            self.project_name = state.get("project_name", "untitled-project")
-            self.current_prompt = state.get("current_prompt", "")
-            self.current_scene = state.get("current_scene", "")
-            self.reference_image_path = state.get("reference_image_path")
-            self.additional_images_paths = state.get("additional_images_paths", [])
-            self.generated_images = state.get("generated_images", [])
-            self.iteration_count = state.get("iteration_count", 0)
-            self.review_mode = state.get("review_mode", "phase1")
-            self.greenzone_image_path = state.get("greenzone_image_path")
-            self.current_phase2_description = state.get("current_phase2_description", "")
-            self.phase1_review_history = state.get("phase1_review_history", [])
-            self.phase1_review_context = state.get("phase1_review_context", {})
-            
-            last_saved = state.get("last_saved", "unknown")
-            
-            # Check if reference images exist
-            ref_exists = self.reference_image_path and Path(self.reference_image_path).exists()
-            additional_count = len([p for p in self.additional_images_paths if Path(p).exists()])
-            
-            # Load images for display (convert paths to list for gallery)
-            images_to_display = [img for img in self.generated_images if Path(img).exists()]
-            
-            # Prepare reference image (return path if exists, None otherwise)
-            ref_image_to_load = self.reference_image_path if (self.reference_image_path and Path(self.reference_image_path).exists()) else None
-            
-            # Prepare additional images (filter to only existing paths)
-            additional_images_to_load = [p for p in self.additional_images_paths if Path(p).exists()]
-            
-            greenzone_image_to_load = self.greenzone_image_path if (self.greenzone_image_path and Path(self.greenzone_image_path).exists()) else None
-            # For Phase 2 projects, show the user's original enhancement description, not the constructed scene text
-            scene_to_show = self.current_phase2_description if self.review_mode == "phase2" else self.current_scene
-
-            return f"""✅ Loaded project '{self.project_name}'
-
-📅 Last saved: {last_saved}
-🎯 Mode: {self.review_mode}
-📝 Prompt: {'Set' if self.current_prompt else 'Not set'}
-📄 Scene description: {'Set' if self.current_scene else 'Not set'}
-🖼️ Character reference: {'✅ Available' if ref_exists else '❌ Missing'}
-➕ Additional images: {additional_count}
-📸 Generated images: {len(self.generated_images)}
-🔄 Iterations: {self.iteration_count}
-💬 Review history: {len(self.phase1_review_history)} message(s)
-🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display
-
-        except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, []
-    
-    def list_projects(self) -> List[str]:
-        """List all available projects."""
-        try:
-            if not self.output_dir.exists():
-                return []
-            
-            projects = []
-            for item in self.output_dir.iterdir():
-                if item.is_dir() and not item.name.startswith('.'):
-                    metadata_path = item / ".project_metadata.json"
-                    if metadata_path.exists():
-                        # Has metadata, include with timestamp
-                        try:
-                            with open(metadata_path, 'r') as f:
-                                state = json.load(f)
-                                last_saved = state.get("last_saved", "")
-                                projects.append((item.name, last_saved))
-                        except:
-                            projects.append((item.name, ""))
-                    else:
-                        # Old project without metadata
-                        projects.append((item.name, ""))
-            
-            # Sort by last saved (most recent first)
-            projects.sort(key=lambda x: x[1], reverse=True)
-            return [name for name, _ in projects]
-        except Exception as e:
-            print(f"Error listing projects: {e}")
-            return []
     
     def generate_initial_prompt(
         self,
@@ -722,235 +366,6 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
         except Exception as e:
             return f"❌ Error generating images: {str(e)}", [], []
     
-    def start_phase1_review(
-        self,
-        user_comment: str,
-        manual_uploaded_images: Optional[List] = None
-    ) -> Tuple[List, str]:
-        """Start an interactive review conversation.
-        
-        This handles BOTH Phase 1 and Phase 2 reviews.
-        The review_mode instance variable determines image ordering:
-        - phase1: IMAGE_0=character, IMAGE_1+=additional characters
-        - phase2: IMAGE_0=character, IMAGE_1=greenzone base
-        """
-        if not self.client:
-            return [], "❌ Please configure your API key first.", []
-        
-        # Determine which images to review
-        images_to_review = []
-        
-        if manual_uploaded_images:
-            for img in manual_uploaded_images:
-                if img is not None:
-                    path = self.save_uploaded_file(img)
-                    if path:
-                        images_to_review.append(path)
-        elif self.generated_images:
-            images_to_review = self.generated_images
-        
-        if not images_to_review:
-            return [], "❌ No images to review. Please generate or upload images first.", []
-        
-        try:
-            # Determine image ordering based on review mode
-            if self.review_mode == "phase2":
-                # Phase 2: IMAGE_0=character, IMAGE_1=greenzone
-                reference_image = self.reference_image_path
-                additional_images = [self.greenzone_image_path] if self.greenzone_image_path else []
-                scene_description = f"""Phase 2 Enhancement Review:
-{self.current_phase2_description}
-
-Context:
-- <IMAGE_0> is the character reference for style/appearance (SAME as Phase 1)
-- <IMAGE_1> is the green-zoned base image marking where to add elements
-- Only add inside green zones on <IMAGE_1>
-- Erase all green paint afterward
-- Lock style to <IMAGE_0>
-
-Review the failed enhancement attempts."""
-                mode_label = "Phase 2 Enhancement"
-            else:
-                # Phase 1: IMAGE_0=character, IMAGE_1+=additional characters
-                reference_image = self.reference_image_path
-                additional_images = self.additional_images_paths if self.additional_images_paths else None
-                scene_description = self.current_scene
-                mode_label = "Phase 1"
-            
-            # Store context for this review session
-            self.phase1_review_context = {
-                "failed_images": images_to_review,
-                "original_prompt": self.current_prompt,
-                "scene_description": scene_description,
-                "reference_image": reference_image,
-                "additional_images": additional_images,
-                "review_mode": self.review_mode
-            }
-            
-            # Build user's initial message
-            image_ref_guide = "- <IMAGE_0> = Character reference (for style/appearance lock)"
-            if self.review_mode == 'phase2':
-                image_ref_guide += "\n- <IMAGE_1> = Green-zoned base (spatial guide for enhancements)"
-            elif additional_images:
-                image_ref_guide += f"\n- <IMAGE_1>+ = Additional characters ({len(additional_images)} provided)"
-            image_ref_guide += "\n- Failed images = Analyzed by AI (refer to as 'failed image 1', 'failed image 2', etc.)"
-            
-            user_initial_msg = f"""[{mode_label} Review]
-
-Here are the failed images to review:
-
-{user_comment if user_comment.strip() else 'Please review these images and suggest corrections.'}
-
-Image Reference Guide:
-{image_ref_guide}
-
-IMPORTANT: Always start your response with a brief 1-3 sentence explanation of what changes you're making to the prompt (what you're strengthening, what bans you're adding, etc.), then provide the corrected prompt in a code block."""
-            
-            # Get initial review
-            initial_review = self.client.review_images(
-                failed_images=images_to_review,
-                original_prompt=self.current_prompt,
-                scene_description=scene_description,
-                reference_image=reference_image,
-                skill_content=self._get_review_skill(),
-                additional_images=additional_images
-            )
-            
-            # Build user's initial message with file list
-            image_list = "\n".join([f"  • {Path(img).name}" for img in images_to_review])
-            user_initial_msg_with_files = f"""{user_initial_msg}
-
-Failed image files being reviewed:
-{image_list}"""
-            
-            # Build display message for chat history (just the user's actual comment)
-            user_display_msg = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
-            
-            # Initialize chat history (Gradio Chatbot expects tuple of strings)
-            # Show only the user's actual message in the UI, not the full system prompt
-            self.phase1_review_history = [
-                (user_display_msg, initial_review)
-            ]
-            
-            # Build instructions based on mode
-            mode_specific_info = ""
-            if self.review_mode == 'phase2':
-                mode_specific_info = "\n🗂 <IMAGE_1> = Green-zoned base"
-            elif additional_images:
-                mode_specific_info = f"\n🗂 <IMAGE_1>+ = {len(additional_images)} additional character(s)"
-            
-            instructions = f"""✅ {mode_label} Review started!
-            
-🎯 Mode: {mode_label}
-📸 {len(images_to_review)} failed image(s) being analyzed
-🗂 <IMAGE_0> = Character reference (always){mode_specific_info}
-💬 Refer to failed images as 'failed image 1', 'failed image 2', etc.
-❓ Ask questions or request changes"""
-            
-            return self.phase1_review_history, instructions, images_to_review
-            
-        except Exception as e:
-            return [], f"❌ Error during review: {str(e)}", []
-    
-    def continue_phase1_review(self, user_message: str, history: List) -> Tuple[List, str]:
-        """Continue the Phase 1 review conversation."""
-        if not self.client:
-            return history, "❌ Client not initialized"
-        
-        if not user_message.strip():
-            return history, ""
-        
-        try:
-            # Build conversation context with images
-            review_mode = self.phase1_review_context.get("review_mode", self.review_mode)
-            effective_review_skill = self._get_review_skill() if review_mode == "phase2" else self.review_skill
-            messages = [{"role": "system", "content": effective_review_skill}]
-            
-            # Add image context to first message
-            if self.phase1_review_context:
-                content = []
-                
-                # Add reference image
-                if self.phase1_review_context.get("reference_image"):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(self.phase1_review_context['reference_image'])}"
-                        }
-                    })
-                
-                # Add failed images
-                for img_path in self.phase1_review_context.get("failed_images", []):
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"
-                        }
-                    })
-                
-                content.append({
-                    "type": "text",
-                    "text": f"Original prompt: {self.phase1_review_context.get('original_prompt', '')}\n\nScene: {self.phase1_review_context.get('scene_description', '')}"
-                })
-                
-                messages.append({"role": "user", "content": content})
-            
-            # Add conversation history EXCEPT the first exchange (already included above with images)
-            for idx, (user_msg, assistant_msg) in enumerate(history):
-                if idx == 0:
-                    # First exchange already added above with images, but include the assistant's response
-                    if assistant_msg:
-                        messages.append({"role": "assistant", "content": assistant_msg})
-                else:
-                    # Subsequent messages: add both user and assistant
-                    if user_msg:
-                        messages.append({"role": "user", "content": user_msg})
-                    if assistant_msg:
-                        messages.append({"role": "assistant", "content": assistant_msg})
-            
-            # Add new user message
-            messages.append({"role": "user", "content": user_message})
-            
-            # Get response
-            import httpx
-            with httpx.Client(timeout=120.0) as client:
-                response = client.post(
-                    f"{self.client.base_url}/chat/completions",
-                    headers=self.client.headers,
-                    json={
-                        "model": self.client.chat_model,
-                        "messages": messages
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                assistant_response = result["choices"][0]["message"]["content"]
-            
-            # Update history
-            new_history = history + [(user_message, assistant_response)]
-            self.phase1_review_history = new_history
-            
-            return new_history, ""
-            
-        except Exception as e:
-            return history, f"❌ Error: {str(e)}"
-    
-    def extract_prompt_from_phase1_chat(self) -> Tuple[str, str, Any]:
-        """Extract the final prompt from the Phase 1 review chat and send to generation tab."""
-        if not self.phase1_review_history:
-            return "", "❌ No review conversation found. Start a review first.", gr.update()
-        
-        # Get the last assistant message
-        for user_msg, assistant_msg in reversed(self.phase1_review_history):
-            if assistant_msg:
-                # Use the same cleaning logic as the client
-                from pasokon.grok_client import GrokClient
-                cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
-                if cleaned_prompt:
-                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab. Switched to Generate Images tab.", gr.update(selected="tab_generate_images")
-        
-        return "", "❌ No valid prompt found in conversation history.", gr.update()
-    
     def update_greenzone_image(self, greenzone_image) -> str:
         """Pre-save greenzone image so Save Now works before Generate Prompt is clicked."""
         if greenzone_image:
@@ -980,27 +395,6 @@ Failed image files being reviewed:
             self.additional_images_paths = []
         return ""
     
-    def _get_review_skill(self) -> str:
-        """Return review skill, prepending a Phase 2 override when in phase2 mode."""
-        if self.review_mode != "phase2":
-            return self.review_skill
-        prefix = """PHASE 2 REVIEW MODE — IMAGE ASSIGNMENT OVERRIDE
-The image assignments below are FIXED for this session. Any conflicting convention in the skill (e.g. "IMAGE_0 = green-marked base") must be IGNORED.
-
-- <IMAGE_0> = CHARACTER REFERENCE — lock all style, appearance, hair color and identity to this image
-- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the spatial base with green/pink zones showing where elements must be added
-
-When reviewing failed images:
-- Check that elements were added only inside the green/pink zones on <IMAGE_1>
-- Check that appearance/style is locked to <IMAGE_0>
-- Check that all green/pink paint was completely erased
-When writing a corrected prompt, always keep <IMAGE_0> = character reference and <IMAGE_1> = green-marked base. Do NOT swap them.
-
----
-
-"""
-        return prefix + self.review_skill
-
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
         with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft()) as app:
@@ -1139,8 +533,10 @@ When writing a corrected prompt, always keep <IMAGE_0> = character reference and
                     with gr.Row():
                         output_gallery = gr.Gallery(
                             label="Generated Images",
-                            columns=3,
-                            height="auto"
+                            columns=4,
+                            height=140,
+                            object_fit="cover",
+                            preview=False,
                         )
                     
                 # Tab 4: Review and Correction
@@ -1168,30 +564,30 @@ When writing a corrected prompt, always keep <IMAGE_0> = character reference and
                     # Chatbot interface for interactive review
                     review_chatbot = gr.Chatbot(
                         label="Review Conversation",
-                        height=600
+                        height=500,
+                        show_label=False,
+                        bubble_full_width=False,
                     )
-                    
-                    gr.Markdown("💡 **Tip:** First message starts the review. In your messages, you can refer to specific failed images as 'failed image 1', 'failed image 2', etc.")
-                    
-                    with gr.Row():
+
+                    with gr.Row(equal_height=True):
                         review_user_input = gr.Textbox(
-                            label="Your message",
-                            placeholder="Start review by describing issues or just say 'review these images'. Then continue conversation to refine corrections.",
-                            lines=1,
-                            max_lines=5,
-                            scale=10,
+                            placeholder="Describe issues, or just say 'review these images'. Refer to failed images as 'failed image 1', 'failed image 2', etc.",
+                            lines=2,
+                            max_lines=6,
+                            scale=9,
                             show_label=False,
                             container=False
                         )
-                        send_review_btn = gr.Button("Send", variant="secondary", scale=0, size="sm", min_width=80)
+                        send_review_btn = gr.Button("Send", variant="primary", scale=1, min_width=90)
                     
-                    # Gallery for failed image thumbnails
+                    # Thumbnail strip — click any image for fullscreen lightbox
                     failed_images_gallery = gr.Gallery(
                         label="Failed Images Being Reviewed",
-                        columns=4,
-                        height=300,
-                        object_fit="contain",
-                        show_label=True
+                        columns=8,
+                        height=90,
+                        object_fit="cover",
+                        show_label=True,
+                        preview=False,
                     )
                     
                     gr.Markdown("---")
