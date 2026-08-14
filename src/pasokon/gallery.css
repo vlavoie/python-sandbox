@@ -1,31 +1,9 @@
-/* ── VS Code-style font & size ────────────────────────────────────────── */
-.gradio-container * {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-                 "Ubuntu", "Droid Sans", Roboto, "Helvetica Neue", Arial,
-                 sans-serif !important;
-}
-/* Body text — bump all common text-bearing elements to 14px */
-.gradio-container input,
-.gradio-container textarea,
-.gradio-container select,
-.gradio-container button,
-.gradio-container label,
-.gradio-container p,
-.gradio-container li,
-.gradio-container span,
-.gradio-container td,
-.gradio-container th,
-.gradio-container .wrap,
-.gradio-container [class*="prose"] {
-    font-size: 14px !important;
-}
-/* Monospace elements keep their own stack */
+/* ── Font fallback (theme sets the primary stack via --font variables) ── */
 .gradio-container pre,
 .gradio-container code,
 .gradio-container [class*="code"] {
     font-family: "Cascadia Code", "Consolas", "SF Mono", "Fira Code",
                  "Droid Sans Mono", "Courier New", monospace !important;
-    font-size: 13px !important;
 }
 
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */

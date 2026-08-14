@@ -22,6 +22,19 @@ _ASSETS = Path(__file__).parent
 _GALLERY_CSS = (_ASSETS / "gallery.css").read_text(encoding="utf-8")
 _GALLERY_JS  = (_ASSETS / "gallery.js").read_text(encoding="utf-8")
 
+# System-font theme — no Google Fonts, VS Code-style stack, larger base size
+_THEME = gr.themes.Soft(
+    font=[
+        "ui-sans-serif", "system-ui", "Segoe UI",
+        "Roboto", "Helvetica Neue", "Arial", "sans-serif",
+    ],
+    font_mono=[
+        "ui-monospace", "Cascadia Code", "Consolas",
+        "Fira Code", "Droid Sans Mono", "monospace",
+    ],
+    text_size=gr.themes.sizes.text_lg,
+)
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -420,7 +433,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
-        with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft(), css=_GALLERY_CSS, js=_GALLERY_JS) as app:
+        with gr.Blocks(title="FPV POV Image Generator", theme=_THEME, css=_GALLERY_CSS, js=_GALLERY_JS) as app:
             gr.Markdown("# 🎨 FPV POV Image Generator")
             gr.Markdown("Automate your Grok-based first-person POV image generation workflow")
             
