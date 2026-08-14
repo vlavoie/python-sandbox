@@ -19,8 +19,8 @@ from .review_handler import ReviewHandler
 from .gallery_widget import render_gallery_html
 
 _ASSETS = Path(__file__).parent
-_GALLERY_CSS = (_ASSETS / "gallery.css").read_text()
-_GALLERY_JS  = (_ASSETS / "gallery.js").read_text()
+_GALLERY_CSS = (_ASSETS / "gallery.css").read_text(encoding="utf-8")
+_GALLERY_JS  = (_ASSETS / "gallery.js").read_text(encoding="utf-8")
 
 # Load environment variables from .env file
 load_dotenv()

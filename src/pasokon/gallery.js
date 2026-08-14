@@ -19,7 +19,7 @@
 
     const prevBtn = document.createElement('button');
     prevBtn.id = 'psk-lightbox-prev';
-    prevBtn.title = 'Previous (←)';
+    prevBtn.title = 'Previous (<-)';
     prevBtn.innerHTML =
         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none">' +
         '<polyline points="15 18 9 12 15 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -30,7 +30,7 @@
 
     const nextBtn = document.createElement('button');
     nextBtn.id = 'psk-lightbox-next';
-    nextBtn.title = 'Next (→)';
+    nextBtn.title = 'Next (->)';
     nextBtn.innerHTML =
         '<svg width="20" height="20" viewBox="0 0 24 24" fill="none">' +
         '<polyline points="9 18 15 12 9 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
