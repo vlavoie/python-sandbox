@@ -157,22 +157,31 @@ class FPVPOVApp(ReviewHandler):
         additional_images: Optional[List] = None,
         greenzone_image=None,
         progress=gr.Progress()
-    ) -> Tuple[str, str, Any]:
+    ):
         """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
+        _btn_reset = gr.update(value="🎯 Generate Prompt", interactive=True)
+        _btn_loading = gr.update(value="⏳ Generating prompt...", interactive=False)
+
         if not self.client:
-            return "", gr.update(), gr.update(value=[])
+            yield "", gr.update(), gr.update(value=[]), _btn_reset
+            return
 
         if not reference_image:
-            return "", gr.update(), gr.update(value=[])
+            yield "", gr.update(), gr.update(value=[]), _btn_reset
+            return
 
         if not scene_description.strip():
-            return "", gr.update(), gr.update(value=[])
+            yield "", gr.update(), gr.update(value=[]), _btn_reset
+            return
 
         is_phase2 = greenzone_image is not None
 
         # Generating a new prompt starts a fresh iteration; old review is no longer relevant.
         self.phase1_review_history = []
         self.phase1_review_context = {}
+
+        # Show loading state on the button immediately so there is visual feedback from click.
+        yield gr.update(), gr.update(), gr.update(), _btn_loading
 
         try:
             progress(0, desc="Preparing images...")
@@ -240,7 +249,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
 ---
 
 """
-                progress(0.5, desc="Generating Phase 2 prompt...")
+                progress(0.5, desc="Waiting for Grok API (~30s)...")
                 self.current_prompt = self.client.generate_prompt(
                     reference_image=self.reference_image_path,       # IMAGE_0 = character
                     scene_description=full_scene,
@@ -251,7 +260,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
                 self.greenzone_image_path = None
                 self.review_mode = "phase1"
                 self.current_scene = scene_description
-                progress(0.5, desc="Generating prompt...")
+                progress(0.5, desc="Waiting for Grok API (~30s)...")
                 self.current_prompt = self.client.generate_prompt(
                     reference_image=self.reference_image_path,
                     scene_description=scene_description,
@@ -261,7 +270,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
 
             self.save_project_state()
             progress(1.0, desc="Done")
-            return self.current_prompt, gr.update(selected="tab_generate_images"), gr.update(value=[])
+            yield self.current_prompt, gr.update(selected="tab_generate_images"), gr.update(value=[]), _btn_reset
 
         except Exception as e:
             error_msg = str(e)
@@ -270,7 +279,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return "", gr.update(), gr.update(value=[])
+            yield "", gr.update(), gr.update(value=[]), _btn_reset
     
     def save_images_permanently(
         self,
@@ -346,12 +355,18 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
             return "❌ No reference image available.", [], []
         
         try:
+            # In Phase 2 the greenzone base is IMAGE_1; additional Phase 1 characters are irrelevant.
+            if self.review_mode == "phase2":
+                effective_additional = [self.greenzone_image_path] if self.greenzone_image_path else None
+            else:
+                effective_additional = self.additional_images_paths if self.additional_images_paths else None
+
             # Generate images
             image_data_list = self.client.generate_images(
                 prompt=prompt,
                 reference_image=self.reference_image_path,
                 num_images=num_images,
-                additional_images=self.additional_images_paths if self.additional_images_paths else None,
+                additional_images=effective_additional,
                 aspect_ratio=aspect_ratio,
                 model=model_override,
                 progress_callback=progress_callback
@@ -735,7 +750,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
                 inputs=[reference_image, scene_description, additional_images, greenzone_image],
-                outputs=[prompt_to_use, main_tabs, review_chatbot]
+                outputs=[prompt_to_use, main_tabs, review_chatbot, generate_prompt_btn]
             )
 
             # Tab 3: Generate Images
