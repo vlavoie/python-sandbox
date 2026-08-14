@@ -141,6 +141,14 @@ class FPVPOVApp(ReviewHandler):
         if self.client:
             self.client.image_model = model_name
         self.save_project_state()
+
+    def update_draft_image_model(self, model_name: str) -> None:
+        self.draft_image_model = model_name
+        self.save_project_state()
+
+    def update_draft_aspect_ratio(self, ratio: str) -> None:
+        self.draft_aspect_ratio = ratio
+        self.save_project_state()
     
     def generate_initial_prompt(
         self,
@@ -296,7 +304,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
         self,
         prompt: str,
         num_images: int = 3,
-        aspect_ratio: str = "16:9"
+        aspect_ratio: str = "16:9",
+        model_override: str = None
     ) -> Tuple[str, List, List]:
         """Generate a batch of images using Grok Imagine."""
         if not self.client:
@@ -317,7 +326,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 reference_image=self.reference_image_path,
                 num_images=num_images,
                 additional_images=self.additional_images_paths if self.additional_images_paths else None,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                model=model_override
             )
             
             # Check if we got any images
@@ -406,8 +416,15 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
     
     # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
 
-    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio):
-        _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
+    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio, draft_mode):
+        if draft_mode == "Draft":
+            _, images, failed = self.generate_images_batch(
+                prompt, num_images,
+                aspect_ratio=self.draft_aspect_ratio,
+                model_override=self.draft_image_model
+            )
+        else:
+            _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
         return render_gallery_html(images), render_gallery_html(failed)
 
     def _load_project_for_ui(self, project_name=None):
@@ -507,10 +524,33 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                                 "grok-imagine-image"
                             ],
                             value=self.image_model,
-                            label="🎨 Image Model",
-                            info="For image generation",
+                            label="🎨 Image Model (Production)",
+                            info="For final image generation",
                             interactive=True,
                             allow_custom_value=True
+                        )
+
+                    gr.Markdown("### Draft Mode")
+                    with gr.Row():
+                        draft_image_model_dropdown = gr.Dropdown(
+                            choices=[
+                                "grok-imagine-image",
+                                "grok-imagine-image-2.0",
+                                "grok-imagine-image-quality",
+                                "grok-imagine-image-pro",
+                            ],
+                            value=self.draft_image_model,
+                            label="🖼️ Image Model (Draft)",
+                            info="Cheaper model used in Draft mode",
+                            interactive=True,
+                            allow_custom_value=True
+                        )
+                        draft_aspect_ratio_dropdown = gr.Dropdown(
+                            choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+                            value=self.draft_aspect_ratio,
+                            label="📐 Aspect Ratio (Draft)",
+                            info="Smaller ratio speeds up draft generation",
+                            interactive=True,
                         )
 
                     project_mgmt_status = gr.Textbox(
@@ -554,7 +594,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 # Tab 3: Image Generation
                 with gr.Tab("3️⃣ Generate Images", id="tab_generate_images"):
                     gr.Markdown("### Generate images using the prompt")
-                    
+
                     with gr.Row():
                         prompt_to_use = gr.Textbox(
                             label="Prompt (edit if needed)",
@@ -562,7 +602,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                             max_lines=10,
                             placeholder="Paste or edit the prompt here..."
                         )
-                    
+
                     with gr.Row():
                         num_images_slider = gr.Slider(
                             minimum=1,
@@ -575,9 +615,15 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                             choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
                             value="16:9",
                             label="Aspect Ratio",
-                            info="Choose the aspect ratio for generated images"
+                            info="Ignored in Draft mode (uses draft ratio from Project Management)"
                         )
-                    
+                        draft_mode_radio = gr.Radio(
+                            choices=["Production", "Draft"],
+                            value="Production",
+                            label="Mode",
+                            info="Draft uses a cheaper model and smaller ratio"
+                        )
+
                     with gr.Row():
                         generate_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
                     
@@ -625,7 +671,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     
                 
             
-            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery, chat_model_dropdown, image_model_dropdown]
+            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery, chat_model_dropdown, image_model_dropdown, draft_image_model_dropdown, draft_aspect_ratio_dropdown]
 
             # Tab 1: Project Management
             set_project_btn.click(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
@@ -648,7 +694,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             # Tab 3: Generate Images
             generate_images_btn.click(
                 fn=self._generate_images_for_ui,
-                inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
+                inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown, draft_mode_radio],
                 outputs=[output_gallery, failed_images_gallery]
             )
 
@@ -670,6 +716,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             # Model selection
             chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown])
             image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown])
+            draft_image_model_dropdown.change(fn=self.update_draft_image_model, inputs=[draft_image_model_dropdown])
+            draft_aspect_ratio_dropdown.change(fn=self.update_draft_aspect_ratio, inputs=[draft_aspect_ratio_dropdown])
 
             # Auto-load last project on page load
             app.load(fn=lambda: self._load_project_for_ui(), outputs=OUTPUTS_PROJECT)

@@ -223,7 +223,8 @@ class GrokClient:
         reference_image: str,
         num_images: int = 3,
         additional_images: Optional[List[str]] = None,
-        aspect_ratio: str = "16:9"
+        aspect_ratio: str = "16:9",
+        model: str = None
     ) -> List[bytes]:
         """Generate images using Grok Imagine API.
         
@@ -249,15 +250,16 @@ class GrokClient:
         
         # Format payload for /images/edits endpoint
         # API uses <IMAGE_0>, <IMAGE_1>, <IMAGE_2> to reference images in prompt
+        effective_model = model or self.image_model
         payload = {
-            "model": self.image_model,
+            "model": effective_model,
             "prompt": prompt,
             "images": images_array,
             "aspect_ratio": aspect_ratio
         }
-        
+
         print(f"\n🎨 Generating {num_images} images in parallel...")
-        print(f"   Model: {self.image_model}")
+        print(f"   Model: {effective_model}")
         print(f"   Aspect ratio: {aspect_ratio}")
         print(f"   Reference images being sent: {len(images_array)}")
         print(f"   Prompt length: {len(prompt)} characters")

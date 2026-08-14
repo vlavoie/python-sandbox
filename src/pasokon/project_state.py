@@ -34,6 +34,8 @@ class ProjectState:
         # Model preferences (persisted per project)
         self.chat_model = "grok-4.20"
         self.image_model = "grok-imagine-image-2.0"
+        self.draft_image_model = "grok-imagine-image"
+        self.draft_aspect_ratio = "1:1"
 
         # Output directory for saved images
         self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
@@ -218,6 +220,8 @@ class ProjectState:
                 "phase1_review_context": self.phase1_review_context,
                 "chat_model": self.chat_model,
                 "image_model": self.image_model,
+                "draft_image_model": self.draft_image_model,
+                "draft_aspect_ratio": self.draft_aspect_ratio,
                 "last_saved": datetime.now().isoformat(),
             }
 
@@ -251,12 +255,12 @@ class ProjectState:
                 if last_project_path.exists():
                     project_name = last_project_path.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
+                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
 
             metadata_path = self._get_project_metadata_path(project_name)
 
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
+                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
 
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -276,6 +280,8 @@ class ProjectState:
             self.phase1_review_context = state.get("phase1_review_context", {})
             self.chat_model = state.get("chat_model", "grok-4.20")
             self.image_model = state.get("image_model", "grok-imagine-image-2.0")
+            self.draft_image_model = state.get("draft_image_model", "grok-imagine-image")
+            self.draft_aspect_ratio = state.get("draft_aspect_ratio", "1:1")
 
             last_saved = state.get("last_saved", "unknown")
 
@@ -307,10 +313,10 @@ class ProjectState:
 📸 Generated images: {len(self.generated_images)}
 🔄 Iterations: {self.iteration_count}
 💬 Review history: {len(self.phase1_review_history)} message(s)
-🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display, self.chat_model, self.image_model
+🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display, self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
 
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, [], "grok-4.20", "grok-imagine-image-2.0"
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, [], "grok-4.20", "grok-imagine-image-2.0", "grok-imagine-image", "1:1"
 
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -345,7 +351,7 @@ class ProjectState:
     def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], List]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
+            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
 
         # Sanitize project name (remove special characters)
         sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
@@ -379,5 +385,7 @@ class ProjectState:
                 [] if is_new_project else self.generated_images,
                 self.chat_model,
                 self.image_model,
+                self.draft_image_model,
+                self.draft_aspect_ratio,
             )
-        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.generated_images, self.chat_model, self.image_model
+        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.generated_images, self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
