@@ -1173,7 +1173,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                         with gr.Column():
                             reference_image = gr.Image(
                                 label="Character Reference Image (<IMAGE_0>)",
-                                type="filepath"
+                                type="filepath",
+                                image_mode=None
                             )
                             additional_images = gr.File(
                                 label="Additional Character References (optional, <IMAGE_1>, <IMAGE_2>...)",
@@ -1291,7 +1292,8 @@ Review the failed enhancement attempts and identify what went wrong."""
                         with gr.Column():
                             green_base_image = gr.Image(
                                 label="Green-Marked Base Image (<IMAGE_1>)",
-                                type="filepath"
+                                type="filepath",
+                                image_mode=None
                             )
                         
                         with gr.Column():
