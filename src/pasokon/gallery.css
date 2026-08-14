@@ -1,0 +1,12 @@
+/* Constrain thumbnail cells so they never overflow the gallery widget */
+.pasokon-gallery .thumbnail-small,
+.pasokon-gallery button.thumbnail-item {
+    height: var(--thumb-h, 112px) !important;
+    overflow: hidden !important;
+}
+.pasokon-gallery .thumbnail-small img,
+.pasokon-gallery button.thumbnail-item img {
+    height: var(--thumb-h, 112px) !important;
+    width:  var(--thumb-h, 112px) !important;
+    object-fit: cover !important;
+}

@@ -17,6 +17,10 @@ from dotenv import load_dotenv
 from .grok_client import GrokClient
 from .review_handler import ReviewHandler
 
+_ASSETS = Path(__file__).parent
+_GALLERY_CSS = (_ASSETS / "gallery.css").read_text()
+_GALLERY_JS  = (_ASSETS / "gallery.js").read_text()
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -397,7 +401,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
     
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
-        with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft()) as app:
+        with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft(), css=_GALLERY_CSS, js=_GALLERY_JS) as app:
             gr.Markdown("# 🎨 FPV POV Image Generator")
             gr.Markdown("Automate your Grok-based first-person POV image generation workflow")
             
@@ -533,10 +537,11 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     with gr.Row():
                         output_gallery = gr.Gallery(
                             label="Generated Images",
-                            columns=4,
-                            height=140,
+                            columns=6,
+                            height=112,
                             object_fit="cover",
                             preview=False,
+                            elem_classes="pasokon-gallery",
                         )
                     
                 # Tab 4: Review and Correction
@@ -580,14 +585,15 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         )
                         send_review_btn = gr.Button("Send", variant="primary", scale=1, min_width=90)
                     
-                    # Thumbnail strip — click any image for fullscreen lightbox
+                    # Thumbnail strip — click any image for fullscreen
                     failed_images_gallery = gr.Gallery(
                         label="Failed Images Being Reviewed",
                         columns=8,
-                        height=90,
+                        height=112,
                         object_fit="cover",
                         show_label=True,
                         preview=False,
+                        elem_classes="pasokon-gallery",
                     )
                     
                     gr.Markdown("---")
