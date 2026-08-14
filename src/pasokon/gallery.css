@@ -1,8 +1,14 @@
-/* ── VS Code-style font — override Gradio theme variables at root ─────── */
-:root {
-    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-            "Ubuntu", "Droid Sans", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-    --font-mono: "Cascadia Code", "SF Mono", "Fira Code", "Consolas",
+/* ── VS Code-style font ───────────────────────────────────────────────── */
+.gradio-container * {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+                 "Ubuntu", "Droid Sans", Roboto, "Helvetica Neue", Arial,
+                 sans-serif !important;
+}
+.gradio-container pre,
+.gradio-container code,
+.gradio-container .code,
+.gradio-container [class*="code"] {
+    font-family: "Cascadia Code", "Consolas", "SF Mono", "Fira Code",
                  "Droid Sans Mono", "Courier New", monospace !important;
 }
 
