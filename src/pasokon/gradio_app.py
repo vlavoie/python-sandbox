@@ -930,6 +930,34 @@ Failed image files being reviewed:
         
         return "", "❌ No valid prompt found in conversation history.", gr.update()
     
+    def update_reference_image(self, reference_image) -> str:
+        """Update the reference image path when a new image is uploaded."""
+        if reference_image:
+            self.reference_image_path = self.save_uploaded_file(reference_image)
+            return "✅ Reference image updated (click 'Save Now' to persist)"
+        return ""
+    
+    def update_additional_images(self, additional_images) -> str:
+        """Update the additional images paths when new images are uploaded."""
+        if additional_images:
+            self.additional_images_paths = []
+            for img in additional_images:
+                if img is not None:
+                    path = self.save_uploaded_file(img)
+                    if path:
+                        self.additional_images_paths.append(path)
+            return f"✅ {len(self.additional_images_paths)} additional image(s) updated (click 'Save Now' to persist)"
+        else:
+            self.additional_images_paths = []
+        return ""
+    
+    def update_greenzone_image(self, greenzone_image) -> str:
+        """Update the greenzone image path when a new image is uploaded."""
+        if greenzone_image:
+            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
+            return "✅ Green-zone base image updated (click 'Save Now' to persist)"
+        return ""
+    
     def set_phase1_mode(self) -> Tuple[str, str]:
         """Reset to Phase 1 review mode."""
         self.review_mode = "phase1"
@@ -1378,6 +1406,20 @@ Review the failed enhancement attempts and identify what went wrong."""
                 outputs=[project_selector]
             )
             
+            # Update reference image when uploaded (so Save Now works without generating prompt)
+            reference_image.change(
+                fn=self.update_reference_image,
+                inputs=[reference_image],
+                outputs=[unified_status]
+            )
+            
+            # Update additional images when uploaded
+            additional_images.change(
+                fn=self.update_additional_images,
+                inputs=[additional_images],
+                outputs=[unified_status]
+            )
+            
             # Tab 2: Generate Prompt
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
@@ -1425,6 +1467,13 @@ Review the failed enhancement attempts and identify what went wrong."""
             )
             
             # Tab 5: Phase 2 Enhancements
+            # Update greenzone image when uploaded (so Save Now works)
+            green_base_image.change(
+                fn=self.update_greenzone_image,
+                inputs=[green_base_image],
+                outputs=[unified_status]
+            )
+            
             enhance_prompt_btn.click(
                 fn=self.set_phase2_mode_and_generate_prompt,
                 inputs=[green_base_image, enhancement_description],
