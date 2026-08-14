@@ -1,17 +1,32 @@
-/* ── Thumbnail strip ─────────────────────────────────────────────────── */
+/* ── Thumbnail strip — pack left, no stretching ──────────────────────── */
+/* Override Gradio's repeat(N, 1fr) grid with fixed-size auto-fill */
+.pasokon-gallery .grid-wrap,
+.pasokon-gallery .grid-container,
+.pasokon-gallery div:has(> button > img) {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, 104px) !important;
+    justify-content: start !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+}
+
 .pasokon-gallery .thumbnail-small,
 .pasokon-gallery button.thumbnail-item {
-    height: 112px !important;
-    width:  112px !important;
+    height: 104px !important;
+    width:  104px !important;
+    min-width: 104px !important;
     overflow: hidden !important;
     cursor: zoom-in !important;
-    flex-shrink: 0;
+    padding: 0 !important;
+    border-radius: 4px !important;
 }
 .pasokon-gallery .thumbnail-small img,
 .pasokon-gallery button.thumbnail-item img {
-    height: 112px !important;
-    width:  112px !important;
+    height: 104px !important;
+    width:  104px !important;
     object-fit: cover !important;
+    display: block !important;
 }
 
 /* ── Lightbox overlay ───────────────────────────────────────────────── */
@@ -46,11 +61,9 @@
     position: fixed;
     top: 16px;
     right: 20px;
-    background: rgba(255,255,255,0.15);
+    background: rgba(255, 255, 255, 0.15);
     border: none;
     color: #fff;
-    font-size: 22px;
-    line-height: 1;
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -59,7 +72,8 @@
     align-items: center;
     justify-content: center;
     transition: background 0.15s;
+    padding: 0;
 }
 #pasokon-lightbox-close:hover {
-    background: rgba(255,255,255,0.30);
+    background: rgba(255, 255, 255, 0.30);
 }

@@ -538,9 +538,10 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         output_gallery = gr.Gallery(
                             label="Generated Images",
                             columns=6,
-                            height=112,
+                            height=120,
                             object_fit="cover",
                             preview=False,
+                            show_label=False,
                             show_download_button=False,
                             elem_classes="pasokon-gallery",
                         )
@@ -590,9 +591,9 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     failed_images_gallery = gr.Gallery(
                         label="Failed Images Being Reviewed",
                         columns=8,
-                        height=112,
+                        height=120,
                         object_fit="cover",
-                        show_label=True,
+                        show_label=False,
                         preview=False,
                         show_download_button=False,
                         elem_classes="pasokon-gallery",
