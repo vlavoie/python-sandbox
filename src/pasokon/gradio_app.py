@@ -545,17 +545,17 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                                 file_count="multiple",
                                 type="filepath"
                             )
-                            greenzone_image = gr.Image(
-                                label="Green-zone Base Image (optional — triggers Phase 2, <IMAGE_1>)",
-                                type="filepath",
-                                image_mode=None
-                            )
 
                         with gr.Column():
                             scene_description = gr.Textbox(
                                 label="Scene / Enhancement Description",
                                 placeholder="Phase 1: describe your scene.\nPhase 2: describe what to add in the green zones.",
-                                lines=10
+                                lines=8
+                            )
+                            greenzone_image = gr.Image(
+                                label="Green-zone Base Image (optional — triggers Phase 2, <IMAGE_1>)",
+                                type="filepath",
+                                image_mode=None
                             )
 
                     generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
@@ -595,16 +595,6 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     
                 # Tab 4: Review and Correction
                 with gr.Tab("4️⃣ Review & Correct", id="tab_review"):
-                    gr.Markdown("""### Review Failed Images and Get Corrections
-                    
-**How it works:**
-1. **Send a message** to start the review (describe what's wrong or just ask to review)
-2. Images are automatically pulled from the **Generate Images** tab, or you can **upload specific failed images**
-3. Continue the conversation to refine the corrections
-4. Extract the final prompt when satisfied
-
-💡 **First message starts the review** - describe issues or just say "review these images"
-                    """)
                     
                     with gr.Row():
                         with gr.Column():
