@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from .grok_client import GrokClient
 from .review_handler import ReviewHandler
+from .gallery_widget import render_gallery_html
 
 _ASSETS = Path(__file__).parent
 _GALLERY_CSS = (_ASSETS / "gallery.css").read_text()
@@ -399,6 +400,24 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             self.additional_images_paths = []
         return ""
     
+    # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
+
+    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio):
+        status, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
+        return status, render_gallery_html(images), render_gallery_html(failed)
+
+    def _load_project_for_ui(self, project_name=None):
+        result = list(self.load_project_state(project_name))
+        result[3] = render_gallery_html(result[3] or [])   # failed_images_gallery slot
+        result[9] = render_gallery_html(result[9] or [])   # output_gallery slot
+        return tuple(result)
+
+    def _set_project_for_ui(self, project_name):
+        result = list(self.set_project_name(project_name))
+        result[3] = render_gallery_html(result[3] or [])
+        result[9] = render_gallery_html(result[9] or [])
+        return tuple(result)
+
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
         with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft(), css=_GALLERY_CSS, js=_GALLERY_JS) as app:
@@ -535,16 +554,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         generate_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
                     
                     with gr.Row():
-                        output_gallery = gr.Gallery(
-                            label="Generated Images",
-                            columns=6,
-                            height=120,
-                            object_fit="cover",
-                            preview=False,
-                            show_label=False,
-                            show_download_button=False,
-                            elem_classes="pasokon-gallery",
-                        )
+                        output_gallery = gr.HTML()
                     
                 # Tab 4: Review and Correction
                 with gr.Tab("4️⃣ Review & Correct", id="tab_review"):
@@ -587,17 +597,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         )
                         send_review_btn = gr.Button("Send", variant="primary", scale=1, min_width=90)
                     
-                    # Thumbnail strip — click any image for fullscreen
-                    failed_images_gallery = gr.Gallery(
-                        label="Failed Images Being Reviewed",
-                        columns=8,
-                        height=120,
-                        object_fit="cover",
-                        show_label=False,
-                        preview=False,
-                        show_download_button=False,
-                        elem_classes="pasokon-gallery",
-                    )
+                    # Thumbnail strip for images under review
+                    failed_images_gallery = gr.HTML()
                     
                     gr.Markdown("---")
                     gr.Markdown("**When you're satisfied with the conversation:**")
@@ -648,9 +649,9 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery]
 
             # Tab 1: Project Management
-            set_project_btn.click(fn=self.set_project_name, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
-            project_name_input_dup.submit(fn=self.set_project_name, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
-            load_project_btn.click(fn=self.load_project_state, inputs=[project_selector], outputs=OUTPUTS_PROJECT)
+            set_project_btn.click(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
+            project_name_input_dup.submit(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
+            load_project_btn.click(fn=self._load_project_for_ui, inputs=[project_selector], outputs=OUTPUTS_PROJECT)
             manual_save_btn.click(fn=self.save_project_state, outputs=[project_mgmt_status])
             project_selector.focus(fn=lambda: gr.Dropdown(choices=self.list_projects()), outputs=[project_selector])
 
@@ -667,21 +668,21 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
             # Tab 3: Generate Images
             generate_images_btn.click(
-                fn=self.generate_images_batch,
+                fn=self._generate_images_for_ui,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
                 outputs=[unified_status, output_gallery, failed_images_gallery]
             )
 
             # Tab 4: Review & Correct
-            def send_message(msg, history, uploaded_files, current_gallery):
+            def send_message(msg, history, uploaded_files, current_gallery_html):
                 if not msg.strip():
-                    return history, "", "", current_gallery
+                    return history, "", "", current_gallery_html
                 if not history:
                     review_result = self.start_phase1_review(msg, uploaded_files)
-                    return review_result[0], "", review_result[1], review_result[2]
+                    return review_result[0], "", review_result[1], render_gallery_html(review_result[2])
                 else:
                     cont_result = self.continue_phase1_review(msg, history)
-                    return cont_result[0], "", "", current_gallery
+                    return cont_result[0], "", "", current_gallery_html
 
             send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
             review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
@@ -692,7 +693,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown], outputs=[unified_status])
 
             # Auto-load last project on page load
-            app.load(fn=lambda: self.load_project_state(), outputs=OUTPUTS_PROJECT)
+            app.load(fn=lambda: self._load_project_for_ui(), outputs=OUTPUTS_PROJECT)
             
         return app
 
