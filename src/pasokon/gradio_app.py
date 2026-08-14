@@ -128,21 +128,19 @@ class FPVPOVApp(ReviewHandler):
             self.available_image_models = ["grok-imagine-image-2.0"]
             return self.available_chat_models, self.available_image_models
     
-    def update_chat_model(self, model_name: str) -> str:
+    def update_chat_model(self, model_name: str) -> None:
         """Update the chat model used by the client."""
         self.chat_model = model_name
         if self.client:
             self.client.chat_model = model_name
         self.save_project_state()
-        return f"✅ Chat model set to: {model_name}"
 
-    def update_image_model(self, model_name: str) -> str:
+    def update_image_model(self, model_name: str) -> None:
         """Update the image model used by the client."""
         self.image_model = model_name
         if self.client:
             self.client.image_model = model_name
         self.save_project_state()
-        return f"✅ Image model set to: {model_name}"
     
     def generate_initial_prompt(
         self,
@@ -384,34 +382,27 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
         except Exception as e:
             return f"❌ Error generating images: {str(e)}", [], []
     
-    def update_greenzone_image(self, greenzone_image) -> str:
+    def update_greenzone_image(self, greenzone_image) -> None:
         """Pre-save greenzone image so Save Now works before Generate Prompt is clicked."""
         if greenzone_image:
             self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
-            return "✅ Green-zone base image updated"
-        self.greenzone_image_path = None
-        return ""
+        else:
+            self.greenzone_image_path = None
 
-    def update_reference_image(self, reference_image) -> str:
+    def update_reference_image(self, reference_image) -> None:
         """Update the reference image path when a new image is uploaded."""
         if reference_image:
             self.reference_image_path = self.save_uploaded_file(reference_image)
-            return "✅ Reference image updated (click 'Save Now' to persist)"
-        return ""
-    
-    def update_additional_images(self, additional_images) -> str:
+
+    def update_additional_images(self, additional_images) -> None:
         """Update the additional images paths when new images are uploaded."""
+        self.additional_images_paths = []
         if additional_images:
-            self.additional_images_paths = []
             for img in additional_images:
                 if img is not None:
                     path = self.save_uploaded_file(img)
                     if path:
                         self.additional_images_paths.append(path)
-            return f"✅ {len(self.additional_images_paths)} additional image(s) updated (click 'Save Now' to persist)"
-        else:
-            self.additional_images_paths = []
-        return ""
     
     # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
 
