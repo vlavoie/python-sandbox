@@ -240,13 +240,11 @@ class FPVPOVApp:
                 
                 if suffix == '.png':
                     # Preserve transparency for PNG
-                    if img.mode in ('RGBA', 'LA', 'P'):
-                        img.save(temp_path, 'PNG', optimize=True)
-                    elif img.mode == 'RGB':
-                        img.save(temp_path, 'PNG', optimize=True)
-                    else:
+                    if img.mode == 'P':
                         img = img.convert('RGBA')
-                        img.save(temp_path, 'PNG', optimize=True)
+                    elif img.mode not in ('RGBA', 'LA', 'RGB'):
+                        img = img.convert('RGBA')
+                    img.save(temp_path, 'PNG', optimize=True)
                 elif suffix in ['.jpg', '.jpeg']:
                     # Convert to RGB for JPEG
                     if img.mode in ('RGBA', 'LA', 'P'):
@@ -314,13 +312,11 @@ class FPVPOVApp:
             # Determine save format based on extension
             if suffix in ['.png']:
                 # Preserve transparency for PNG
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    img.save(dest_path, 'PNG', optimize=True)
-                elif img.mode == 'RGB':
-                    img.save(dest_path, 'PNG', optimize=True)
-                else:
+                if img.mode == 'P':
                     img = img.convert('RGBA')
-                    img.save(dest_path, 'PNG', optimize=True)
+                elif img.mode not in ('RGBA', 'LA', 'RGB'):
+                    img = img.convert('RGBA')
+                img.save(dest_path, 'PNG', optimize=True)
             elif suffix in ['.jpg', '.jpeg']:
                 # Convert to RGB for JPEG (no transparency support)
                 if img.mode in ('RGBA', 'LA', 'P'):
