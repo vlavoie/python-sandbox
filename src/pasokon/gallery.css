@@ -1,12 +1,65 @@
-/* Constrain thumbnail cells so they never overflow the gallery widget */
+/* ── Thumbnail strip ─────────────────────────────────────────────────── */
 .pasokon-gallery .thumbnail-small,
 .pasokon-gallery button.thumbnail-item {
-    height: var(--thumb-h, 112px) !important;
+    height: 112px !important;
+    width:  112px !important;
     overflow: hidden !important;
+    cursor: zoom-in !important;
+    flex-shrink: 0;
 }
 .pasokon-gallery .thumbnail-small img,
 .pasokon-gallery button.thumbnail-item img {
-    height: var(--thumb-h, 112px) !important;
-    width:  var(--thumb-h, 112px) !important;
+    height: 112px !important;
+    width:  112px !important;
     object-fit: cover !important;
+}
+
+/* ── Lightbox overlay ───────────────────────────────────────────────── */
+#pasokon-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 99999;
+    align-items: center;
+    justify-content: center;
+}
+#pasokon-lightbox.open {
+    display: flex;
+}
+#pasokon-lightbox-inner {
+    position: relative;
+    max-width: 95vw;
+    max-height: 95vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#pasokon-lightbox-inner img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+    display: block;
+    border-radius: 4px;
+}
+#pasokon-lightbox-close {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+#pasokon-lightbox-close:hover {
+    background: rgba(255,255,255,0.30);
 }

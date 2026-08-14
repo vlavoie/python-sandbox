@@ -1,29 +1,38 @@
 () => {
-    // Single-click gallery thumbnail → auto-click the Expand/fullscreen button
+    // ── Build lightbox DOM (once) ──────────────────────────────────────
+    if (document.getElementById('pasokon-lightbox')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'pasokon-lightbox';
+    overlay.innerHTML =
+        '<div id="pasokon-lightbox-inner">' +
+        '  <img id="pasokon-lightbox-img" />' +
+        '</div>' +
+        '<button id="pasokon-lightbox-close" title="Close (Esc)">✕</button>';
+    document.body.appendChild(overlay);
+
+    const img    = document.getElementById('pasokon-lightbox-img');
+    const close  = () => { overlay.classList.remove('open'); img.src = ''; };
+    const open   = (src) => { img.src = src; overlay.classList.add('open'); };
+
+    document.getElementById('pasokon-lightbox-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+    // ── Wire up galleries (run now + whenever DOM changes) ────────────
     const attach = (gallery) => {
-        if (gallery._pasokonFs) return;
-        gallery._pasokonFs = true;
+        if (gallery._pasokonLb) return;
+        gallery._pasokonLb = true;
         gallery.addEventListener('click', (e) => {
-            const thumb = e.target.closest('button');
-            if (!thumb || !thumb.querySelector('img')) return;
-            let tries = 0;
-            const go = () => {
-                const btn =
-                    gallery.querySelector('[aria-label="Expand"]') ||
-                    gallery.querySelector('[aria-label="expand"]') ||
-                    gallery.querySelector('[title="Expand"]') ||
-                    gallery.querySelector('[title="expand"]') ||
-                    [...gallery.querySelectorAll('button')]
-                        .find(b => b !== thumb && b.querySelector('svg') && !b.querySelector('img'));
-                if (btn) { btn.click(); return; }
-                if (tries++ < 10) setTimeout(go, 80);
-            };
-            setTimeout(go, 80);
-        });
+            const thumb = e.target.closest('img');
+            if (!thumb) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            open(thumb.src);
+        }, true);   // capture phase — fires before Gradio / browser handlers
     };
-    const observer = new MutationObserver(() => {
-        document.querySelectorAll('.pasokon-gallery').forEach(attach);
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    document.querySelectorAll('.pasokon-gallery').forEach(attach);
+
+    const scan = () => document.querySelectorAll('.pasokon-gallery').forEach(attach);
+    new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+    scan();
 }

@@ -541,6 +541,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                             height=112,
                             object_fit="cover",
                             preview=False,
+                            show_download_button=False,
                             elem_classes="pasokon-gallery",
                         )
                     
@@ -593,6 +594,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         object_fit="cover",
                         show_label=True,
                         preview=False,
+                        show_download_button=False,
                         elem_classes="pasokon-gallery",
                     )
                     
