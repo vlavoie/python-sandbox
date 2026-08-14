@@ -155,7 +155,8 @@ class FPVPOVApp(ReviewHandler):
         reference_image,
         scene_description: str,
         additional_images: Optional[List] = None,
-        greenzone_image=None
+        greenzone_image=None,
+        progress=gr.Progress()
     ) -> Tuple[str, str, Any]:
         """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
         if not self.client:
@@ -170,6 +171,7 @@ class FPVPOVApp(ReviewHandler):
         is_phase2 = greenzone_image is not None
 
         try:
+            progress(0, desc="Preparing images...")
             self.reference_image_path = self.save_uploaded_file(reference_image)
 
             self.additional_images_paths = []
@@ -216,6 +218,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 ---
 
 """
+                progress(0.5, desc="Generating Phase 2 prompt...")
                 self.current_prompt = self.client.generate_prompt(
                     reference_image=self.reference_image_path,       # IMAGE_0 = character
                     scene_description=full_scene,
@@ -226,6 +229,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 self.greenzone_image_path = None
                 self.review_mode = "phase1"
                 self.current_scene = scene_description
+                progress(0.5, desc="Generating prompt...")
                 self.current_prompt = self.client.generate_prompt(
                     reference_image=self.reference_image_path,
                     scene_description=scene_description,
@@ -234,6 +238,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 )
 
             self.save_project_state()
+            progress(1.0, desc="Done")
             return self.current_prompt, gr.update(selected="tab_generate_images")
 
         except Exception as e:
@@ -318,8 +323,6 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             return "❌ No reference image available.", [], []
         
         try:
-            self.iteration_count += 1
-            
             # Generate images
             image_data_list = self.client.generate_images(
                 prompt=prompt,
@@ -362,9 +365,10 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 
                 images.append(temp_file.name)
             
+            self.iteration_count += 1
             self.generated_images = images
             self.current_prompt = prompt
-            
+
             # Check if we got partial results
             actual_count = len(images)
             is_partial = actual_count < num_images
@@ -416,16 +420,26 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
     
     # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
 
-    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio, draft_mode):
-        if draft_mode == "Draft":
-            _, images, failed = self.generate_images_batch(
-                prompt, num_images,
-                aspect_ratio=self.draft_aspect_ratio,
-                model_override=self.draft_image_model
-            )
-        else:
-            _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
-        return render_gallery_html(images), render_gallery_html(failed)
+    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio, draft_mode, progress=gr.Progress()):
+        try:
+            if draft_mode == "Draft":
+                progress(0, desc=f"Generating {num_images} image(s) in Draft mode ({self.draft_image_model}, {self.draft_aspect_ratio})...")
+                _, images, failed = self.generate_images_batch(
+                    prompt, num_images,
+                    aspect_ratio=self.draft_aspect_ratio,
+                    model_override=self.draft_image_model
+                )
+            else:
+                progress(0, desc=f"Generating {num_images} image(s)...")
+                _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
+            if not images:
+                progress(1.0, desc="Warning: No images returned")
+                return render_gallery_html(self.generated_images), gr.update()
+            progress(1.0, desc="Done")
+            return render_gallery_html(images), render_gallery_html(failed)
+        except Exception:
+            progress(1.0, desc="Failed")
+            return render_gallery_html(self.generated_images), gr.update()
 
     def _load_project_for_ui(self, project_name=None):
         result = list(self.load_project_state(project_name))

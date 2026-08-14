@@ -199,22 +199,25 @@ class GrokClient:
                 print(f"❌ Response: {error_detail}")
                 print(f"❌ Request URL: {e.request.url}")
                 print(f"❌ Model used: {self.chat_model}")
-                
-                # Try to parse error JSON for more details
                 try:
                     error_json = e.response.json()
                     print(f"❌ Error details: {error_json}")
-                except:
-                    pass
-                
+                    api_msg = error_json.get("error", {}).get("message", "")
+                    if any(k in api_msg.lower() for k in ("content", "policy", "moderation", "safety")):
+                        raise Exception("Warning: No response returned")
+                except Exception as inner:
+                    if "Warning:" in str(inner):
+                        raise
                 raise Exception(
                     f"Grok API Error ({e.response.status_code}): {error_detail}\n\n"
                     f"Model: {self.chat_model}\n"
                     f"Check if the model name is correct and your API key has access to vision models."
                 )
-            
+
             # Extract and clean the prompt
             full_response = result["choices"][0]["message"]["content"]
+            if not full_response:
+                raise Exception("Warning: No response returned")
             return self._clean_prompt_text(full_response)
     
     def generate_images(
@@ -302,15 +305,15 @@ class GrokClient:
                             img_response = client.get(image_url)
                             img_response.raise_for_status()
                             image_data = img_response.content
-                            
+
                             total_time = time.time() - start_time
                             print(f"   ✅ Image {index + 1}/{num_images} complete ({total_time:.1f}s)")
                             return (index, image_data)
                         else:
-                            raise Exception("No image URL in response")
+                            raise Exception("Warning: No images returned")
                     else:
-                        raise Exception("Unexpected response format")
-                
+                        raise Exception("Warning: No images returned")
+
                 except httpx.TimeoutException:
                     print(f"\n❌ Timeout generating image {index + 1}/{num_images}")
                     raise Exception(
@@ -324,11 +327,15 @@ class GrokClient:
                     try:
                         error_json = e.response.json()
                         print(f"❌ Error details: {error_json}")
-                    except:
-                        pass
+                        api_msg = error_json.get("error", {}).get("message", "")
+                        if any(k in api_msg.lower() for k in ("content", "policy", "moderation", "safety")):
+                            raise Exception("Warning: No images returned")
+                    except Exception as inner:
+                        if "Warning:" in str(inner):
+                            raise
                     raise Exception(
                         f"Grok Image API Error ({e.response.status_code}): {error_detail}\n\n"
-                        f"Model: {self.image_model}"
+                        f"Model: {effective_model}"
                     )
         
         # Generate all images in parallel
@@ -481,14 +488,19 @@ class GrokClient:
                 try:
                     error_json = e.response.json()
                     print(f"❌ Error details: {error_json}")
-                except:
-                    pass
+                    api_msg = error_json.get("error", {}).get("message", "")
+                    if any(k in api_msg.lower() for k in ("content", "policy", "moderation", "safety")):
+                        raise Exception("Warning: No response returned")
+                except Exception as inner:
+                    if "Warning:" in str(inner):
+                        raise
                 raise Exception(
                     f"Grok API Error ({e.response.status_code}): {error_detail}\n\n"
                     f"Model: {self.chat_model}\n"
                     f"Check if the model name is correct and your API key has access to vision models."
                 )
-            
-            # Extract the corrected prompt - clean it for immediate use
+
             full_response = result["choices"][0]["message"]["content"]
+            if not full_response:
+                raise Exception("Warning: No response returned")
             return self._clean_prompt_text(full_response)

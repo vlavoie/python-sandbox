@@ -133,7 +133,8 @@ Failed image files being reviewed:
             user_display_msg = user_comment.strip() if user_comment.strip() else "Please review these images and suggest corrections."
 
             self.phase1_review_history = [
-                (user_display_msg, initial_review)
+                {"role": "user", "content": user_display_msg},
+                {"role": "assistant", "content": initial_review},
             ]
 
             mode_specific_info = ""
@@ -194,15 +195,14 @@ Failed image files being reviewed:
 
                 messages.append({"role": "user", "content": content})
 
-            for idx, (user_msg, assistant_msg) in enumerate(history):
-                if idx == 0:
-                    if assistant_msg:
-                        messages.append({"role": "assistant", "content": assistant_msg})
-                else:
-                    if user_msg:
-                        messages.append({"role": "user", "content": user_msg})
-                    if assistant_msg:
-                        messages.append({"role": "assistant", "content": assistant_msg})
+            # Skip the first user message — its full context is already in the system + user
+            # messages built above with images. Only add the initial assistant response onward.
+            skip_first_user = True
+            for msg in history:
+                if skip_first_user and msg["role"] == "user":
+                    skip_first_user = False
+                    continue
+                messages.append({"role": msg["role"], "content": msg["content"]})
 
             messages.append({"role": "user", "content": user_message})
 
@@ -215,11 +215,26 @@ Failed image files being reviewed:
                         "messages": messages
                     }
                 )
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as e:
+                    try:
+                        api_msg = e.response.json().get("error", {}).get("message", "")
+                        if any(k in api_msg.lower() for k in ("content", "policy", "moderation", "safety")):
+                            raise Exception("Warning: No response returned")
+                    except Exception as inner:
+                        if "Warning:" in str(inner):
+                            raise
+                    raise
                 result = response.json()
                 assistant_response = result["choices"][0]["message"]["content"]
+                if not assistant_response:
+                    raise Exception("Warning: No response returned")
 
-            new_history = history + [(user_message, assistant_response)]
+            new_history = history + [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": assistant_response},
+            ]
             self.phase1_review_history = new_history
 
             return new_history, ""
@@ -232,10 +247,10 @@ Failed image files being reviewed:
         if not self.phase1_review_history:
             return "", gr.update()
 
-        for user_msg, assistant_msg in reversed(self.phase1_review_history):
-            if assistant_msg:
+        for msg in reversed(self.phase1_review_history):
+            if msg["role"] == "assistant" and msg["content"]:
                 from pasokon.grok_client import GrokClient
-                cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
+                cleaned_prompt = GrokClient._clean_prompt_text(msg["content"])
                 if cleaned_prompt:
                     return cleaned_prompt, gr.update(selected="tab_generate_images")
 
