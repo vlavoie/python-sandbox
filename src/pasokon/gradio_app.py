@@ -160,13 +160,13 @@ class FPVPOVApp(ReviewHandler):
     ) -> Tuple[str, str, Any]:
         """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
         if not self.client:
-            return "", gr.update(), []
+            return "", gr.update(), gr.update(value=[])
 
         if not reference_image:
-            return "", gr.update(), []
+            return "", gr.update(), gr.update(value=[])
 
         if not scene_description.strip():
-            return "", gr.update(), []
+            return "", gr.update(), gr.update(value=[])
 
         is_phase2 = greenzone_image is not None
 
@@ -204,20 +204,38 @@ Context:
 
                 self.current_scene = full_scene
 
-                phase2_prefix = """PHASE 2 ENHANCEMENT MODE
-You are generating a Phase 2 green-zone enhancement prompt.
+                phase2_prefix = """PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
 
-CRITICAL IMAGE ASSIGNMENT — override any conflicting convention in the skill below:
-- <IMAGE_0> is the CHARACTER REFERENCE — lock all style, appearance, hair color, and identity to this image
-- <IMAGE_1> is the GREEN-MARKED BASE IMAGE — the spatial/compositional base to modify
+You are generating a Grok Imagine prompt for Phase 2: a surgical, local addition to an existing base image. This is NOT a full regeneration.
 
-The generated prompt must instruct the image model to:
-- Add the specified elements ONLY inside the green/pink zones on <IMAGE_1>
-- Completely erase all green/pink paint so no trace remains
-- Lock all appearance and style strictly to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base
+FIXED IMAGE ASSIGNMENT (overrides any conflicting convention in the skill below):
+- <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color, and clothing all lock to this image
+- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the unmodified spatial base; only the green-painted zones may change
 
-Do NOT swap these roles. <IMAGE_0> is always the character reference in this workflow.
+WHAT THE GENERATED PROMPT MUST DO:
+The prompt must force the image model to make a precise local change and leave everything else untouched. Vague language causes full regeneration instead of a surgical addition — be explicit.
+
+REQUIRED sections the generated prompt MUST contain:
+
+1. BASE PRESERVATION (mandatory): State clearly that <IMAGE_1> is the spatial base and that every area outside the green zones must be preserved exactly — background, composition, character body, existing scene elements, all unchanged.
+
+2. ADDITION SCOPE (mandatory): Specify that the new element is added ONLY inside the green zones on <IMAGE_1>. Nothing may be added or changed outside the green zones.
+
+3. PAINT ERASURE (mandatory): "Completely erase all green/pink paint afterward — no trace of any paint, marker, or overlay color should remain."
+
+4. STYLE LOCK (mandatory): Lock all appearance, color, texture, and style to <IMAGE_0>.
+
+5. ZONE BAN (mandatory for hair additions): Explicitly forbid anything other than the requested element from appearing inside the green zones — no faces, heads, necks, shoulders, skin, or clothing; only the pure element (e.g. hair strands).
+
+6. SURGICAL FRAMING (mandatory): State that this is a local addition, not a full image regeneration.
+
+For hair/fringe additions, the generated prompt MUST use:
+- Proven language: "soft long dark curly and wavy peripheral fringe hair appearing only as light strands in my peripheral vision at the edges of the frame"
+- Color lock: "match the rich, deep dark color and natural lighting/highlights from <IMAGE_0>"
+- If a solid-color exclusion zone is present: "Keep the [color] area exactly as shown. Do not touch or alter the [color]."
+- Do NOT include any language involving floors, mops, piles, or cascading — even as negatives, these cause floor-hair generation.
+
+The generated prompt must be strict and explicit. Repeat the preservation and scope constraints at least twice.
 
 ---
 
@@ -243,7 +261,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
             self.save_project_state()
             progress(1.0, desc="Done")
-            return self.current_prompt, gr.update(selected="tab_generate_images"), []
+            return self.current_prompt, gr.update(selected="tab_generate_images"), gr.update(value=[])
 
         except Exception as e:
             error_msg = str(e)
@@ -252,7 +270,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return "", gr.update(), []
+            return "", gr.update(), gr.update(value=[])
     
     def save_images_permanently(
         self,
@@ -730,7 +748,9 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             # Tab 4: Review & Correct
             def send_message(msg, history, uploaded_files, current_gallery_html):
                 msg = msg.strip() or "Review these"
-                if not history:
+                # Start fresh when there is no history OR when the review context has been
+                # cleared (e.g. a new prompt was generated), even if stale history remains.
+                if not history or not self.phase1_review_context:
                     review_result = self.start_phase1_review(msg, uploaded_files)
                     return review_result[0], "", render_gallery_html(review_result[2])
                 else:
