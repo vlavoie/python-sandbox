@@ -227,7 +227,8 @@ class GrokClient:
         num_images: int = 3,
         additional_images: Optional[List[str]] = None,
         aspect_ratio: str = "16:9",
-        model: str = None
+        model: str = None,
+        progress_callback=None
     ) -> List[bytes]:
         """Generate images using Grok Imagine API.
         
@@ -348,16 +349,19 @@ class GrokClient:
             future_to_index = {executor.submit(generate_single_image, i): i for i in range(num_images)}
             
             # Collect results as they complete
+            completed = 0
             for future in as_completed(future_to_index):
                 index = future_to_index[future]
                 try:
                     idx, image_data = future.result()
                     images[idx] = image_data
                 except Exception as e:
-                    # Collect error but continue processing other images
                     error_msg = str(e)
                     errors.append((index + 1, error_msg))
                     print(f"   ⚠️ Image {index + 1} failed, continuing with others...")
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, num_images)
         
         # Filter out None values (failed images)
         successful_images = [img for img in images if img is not None]

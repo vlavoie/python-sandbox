@@ -310,7 +310,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
         prompt: str,
         num_images: int = 3,
         aspect_ratio: str = "16:9",
-        model_override: str = None
+        model_override: str = None,
+        progress_callback=None
     ) -> Tuple[str, List, List]:
         """Generate a batch of images using Grok Imagine."""
         if not self.client:
@@ -330,7 +331,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                 num_images=num_images,
                 additional_images=self.additional_images_paths if self.additional_images_paths else None,
                 aspect_ratio=aspect_ratio,
-                model=model_override
+                model=model_override,
+                progress_callback=progress_callback
             )
             
             # Check if we got any images
@@ -422,16 +424,23 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
     def _generate_images_for_ui(self, prompt, num_images, aspect_ratio, draft_mode, progress=gr.Progress()):
         try:
+            def on_image_done(completed, total):
+                progress(completed / total, desc=f"Image {completed}/{total} done...")
+
             if draft_mode == "Draft":
                 progress(0, desc=f"Generating {num_images} image(s) in Draft mode ({self.draft_image_model}, {self.draft_aspect_ratio})...")
                 _, images, failed = self.generate_images_batch(
                     prompt, num_images,
                     aspect_ratio=self.draft_aspect_ratio,
-                    model_override=self.draft_image_model
+                    model_override=self.draft_image_model,
+                    progress_callback=on_image_done
                 )
             else:
                 progress(0, desc=f"Generating {num_images} image(s)...")
-                _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
+                _, images, failed = self.generate_images_batch(
+                    prompt, num_images, aspect_ratio,
+                    progress_callback=on_image_done
+                )
             if not images:
                 progress(1.0, desc="Warning: No images returned")
                 return render_gallery_html(self.generated_images), gr.update()
@@ -716,8 +725,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
             # Tab 4: Review & Correct
             def send_message(msg, history, uploaded_files, current_gallery_html):
-                if not msg.strip():
-                    return history, "", current_gallery_html
+                msg = msg.strip() or "Review these"
                 if not history:
                     review_result = self.start_phase1_review(msg, uploaded_files)
                     return review_result[0], "", render_gallery_html(review_result[2])
