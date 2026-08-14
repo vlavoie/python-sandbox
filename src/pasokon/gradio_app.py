@@ -160,15 +160,19 @@ class FPVPOVApp(ReviewHandler):
     ) -> Tuple[str, str, Any]:
         """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
         if not self.client:
-            return "", gr.update()
+            return "", gr.update(), []
 
         if not reference_image:
-            return "", gr.update()
+            return "", gr.update(), []
 
         if not scene_description.strip():
-            return "", gr.update()
+            return "", gr.update(), []
 
         is_phase2 = greenzone_image is not None
+
+        # Generating a new prompt starts a fresh iteration; old review is no longer relevant.
+        self.phase1_review_history = []
+        self.phase1_review_context = {}
 
         try:
             progress(0, desc="Preparing images...")
@@ -239,7 +243,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
 
             self.save_project_state()
             progress(1.0, desc="Done")
-            return self.current_prompt, gr.update(selected="tab_generate_images")
+            return self.current_prompt, gr.update(selected="tab_generate_images"), []
 
         except Exception as e:
             error_msg = str(e)
@@ -248,7 +252,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return "", gr.update()
+            return "", gr.update(), []
     
     def save_images_permanently(
         self,
@@ -713,7 +717,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
                 inputs=[reference_image, scene_description, additional_images, greenzone_image],
-                outputs=[prompt_to_use, main_tabs]
+                outputs=[prompt_to_use, main_tabs, review_chatbot]
             )
 
             # Tab 3: Generate Images
