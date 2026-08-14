@@ -2,14 +2,8 @@
     if (document.getElementById('psk-lightbox')) return;
 
     // ── Build lightbox DOM ─────────────────────────────────────────────
-    const overlay  = document.createElement('div');
+    const overlay = document.createElement('div');
     overlay.id = 'psk-lightbox';
-
-    const inner = document.createElement('div');
-    inner.id = 'psk-lightbox-inner';
-
-    const img = document.createElement('img');
-    img.id = 'psk-lightbox-img';
 
     const closeBtn = document.createElement('button');
     closeBtn.id = 'psk-lightbox-close';
@@ -20,24 +14,107 @@
         '<line x1="14" y1="2" x2="2"  y2="14" stroke="white" stroke-width="2.5" stroke-linecap="round"/>' +
         '</svg>';
 
-    inner.appendChild(img);
-    overlay.appendChild(inner);
+    const stage = document.createElement('div');
+    stage.id = 'psk-lightbox-stage';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.id = 'psk-lightbox-prev';
+    prevBtn.title = 'Previous (←)';
+    prevBtn.innerHTML =
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none">' +
+        '<polyline points="15 18 9 12 15 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>';
+
+    const mainImg = document.createElement('img');
+    mainImg.id = 'psk-lightbox-img';
+
+    const nextBtn = document.createElement('button');
+    nextBtn.id = 'psk-lightbox-next';
+    nextBtn.title = 'Next (→)';
+    nextBtn.innerHTML =
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none">' +
+        '<polyline points="9 18 15 12 9 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>';
+
+    const filmstrip = document.createElement('div');
+    filmstrip.id = 'psk-lightbox-filmstrip';
+
+    stage.appendChild(prevBtn);
+    stage.appendChild(mainImg);
+    stage.appendChild(nextBtn);
     overlay.appendChild(closeBtn);
+    overlay.appendChild(stage);
+    overlay.appendChild(filmstrip);
     document.body.appendChild(overlay);
 
-    const open  = (src) => { img.src = src; overlay.classList.add('open'); };
-    const close = ()    => { overlay.classList.remove('open'); img.src = ''; };
+    // ── State ──────────────────────────────────────────────────────────
+    let images = [];   // array of src strings for the current gallery
+    let idx    = 0;
 
+    const show = (i) => {
+        idx = (i + images.length) % images.length;
+        mainImg.src = images[idx];
+
+        // Update filmstrip highlights and scroll active into view
+        [...filmstrip.children].forEach((t, j) => {
+            t.classList.toggle('active', j === idx);
+        });
+        filmstrip.children[idx]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+
+        // Hide arrows when only one image
+        const single = images.length <= 1;
+        prevBtn.classList.toggle('hidden', single);
+        nextBtn.classList.toggle('hidden', single);
+    };
+
+    const open = (srcs, startIdx) => {
+        images = srcs;
+
+        // Rebuild filmstrip
+        filmstrip.innerHTML = '';
+        srcs.forEach((src, i) => {
+            const t = document.createElement('img');
+            t.src = src;
+            t.addEventListener('click', (e) => { e.stopPropagation(); show(i); });
+            filmstrip.appendChild(t);
+        });
+
+        overlay.classList.add('open');
+        show(startIdx);
+    };
+
+    const close = () => {
+        overlay.classList.remove('open');
+        mainImg.src = '';
+        filmstrip.innerHTML = '';
+        images = [];
+    };
+
+    // ── Event wiring ───────────────────────────────────────────────────
     closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    prevBtn.addEventListener('click', (e) => { e.stopPropagation(); show(idx - 1); });
+    nextBtn.addEventListener('click', (e) => { e.stopPropagation(); show(idx + 1); });
 
-    // ── Single listener for all .psk-thumb clicks, current and future ──
+    // Click backdrop (not stage contents) to close
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay || e.target === stage) close();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (!overlay.classList.contains('open')) return;
+        if (e.key === 'Escape')     close();
+        if (e.key === 'ArrowLeft')  show(idx - 1);
+        if (e.key === 'ArrowRight') show(idx + 1);
+    });
+
+    // ── Thumbnail click → lightbox ─────────────────────────────────────
     document.addEventListener('click', (e) => {
-        if (e.target.matches('.psk-thumb')) {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            open(e.target.src);
-        }
+        if (!e.target.matches('.psk-thumb')) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const gallery = e.target.closest('.psk-gallery');
+        const thumbs  = gallery ? [...gallery.querySelectorAll('.psk-thumb')] : [e.target];
+        open(thumbs.map(t => t.src), thumbs.indexOf(e.target));
     }, true);
 }
