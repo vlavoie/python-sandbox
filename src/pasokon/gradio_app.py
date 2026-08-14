@@ -966,37 +966,43 @@ Failed image files being reviewed:
             self.review_mode = "phase2"
             
             # Build Phase 2 scene description
+            # IMAGE_0 = character reference, IMAGE_1 = green-marked base (app convention)
             phase2_scene = f"""Phase 2 Enhancement - Green Zone Addition:
 {enhancement_description}
 
 Context:
-- <IMAGE_0> is the character reference for style/appearance matching (SAME as Phase 1)
+- <IMAGE_0> is the character reference for style/appearance matching
 - <IMAGE_1> is the base image with green/pink zones marking where to add elements
 - Only add elements inside the marked zones on <IMAGE_1>
 - Completely erase all green/pink paint afterward
 - Lock appearance/style to <IMAGE_0>
 - Use <IMAGE_1> as the spatial base to modify"""
-            
+
             # Generate enhancement prompt
             self.current_scene = phase2_scene
             phase2_skill_prefix = """PHASE 2 ENHANCEMENT MODE
-You are generating a Phase 2 enhancement prompt, not a standard scene prompt.
+You are generating a Phase 2 green-zone enhancement prompt.
 
-In Phase 2:
-- <IMAGE_0> is the character reference (style/appearance lock — same as Phase 1)
-- <IMAGE_1> is a base image with green/pink zones painted on it marking exactly where new elements must be added
-- The generated prompt must instruct the image model to: add the specified elements only inside the marked zones, completely erase all green/pink paint so no trace remains, maintain exact character appearance from <IMAGE_0>, and use <IMAGE_1> as the spatial/compositional base
+CRITICAL IMAGE ASSIGNMENT — override any conflicting convention in the skill below:
+- <IMAGE_0> is the CHARACTER REFERENCE — lock all style, appearance, hair color, and identity to this image
+- <IMAGE_1> is the GREEN-MARKED BASE IMAGE — the spatial/compositional base to modify
 
-Generate the prompt accordingly.
+The generated prompt must instruct the image model to:
+- Add the specified elements ONLY inside the green/pink zones on <IMAGE_1>
+- Completely erase all green/pink paint so no trace remains
+- Lock all appearance and style strictly to <IMAGE_0>
+- Use <IMAGE_1> as the spatial base
+
+Do NOT swap these roles. <IMAGE_0> is always the character reference in this workflow.
 
 ---
 
 """
             self.current_prompt = self.client.generate_prompt(
-                reference_image=self.reference_image_path,  # <IMAGE_0> = character
+                reference_image=self.reference_image_path,   # <IMAGE_0> = character reference
                 scene_description=phase2_scene,
                 skill_content=phase2_skill_prefix + self.prompt_skill,
-                additional_images=[self.greenzone_image_path]  # <IMAGE_1> = greenzone
+                additional_images=[self.greenzone_image_path]  # <IMAGE_1> = green-marked base
             )
             
             status = """✅ Phase 2 enhancement prompt generated! Switching to Generate Images tab.
@@ -1333,12 +1339,12 @@ Review the failed enhancement attempts and identify what went wrong."""
                 with gr.Column(scale=1):
                     image_model_dropdown = gr.Dropdown(
                         choices=[
-                            "grok-imagine-image-quality",
-                            "grok-imagine-image-pro", 
                             "grok-imagine-image-2.0",
+                            "grok-imagine-image-quality",
+                            "grok-imagine-image-pro",
                             "grok-imagine-image"
                         ],
-                        value="grok-imagine-image-quality",
+                        value="grok-imagine-image-2.0",
                         label="🎨 Image Model",
                         info="For image generation",
                         interactive=True,
@@ -1493,12 +1499,11 @@ def launch():
     if existing_key:
         print("🔑 Auto-initializing with API key from environment...")
         app.initialize_client(existing_key)
-        # Set default to quality model
-        app.client.image_model = "grok-imagine-image-quality"
+        app.client.image_model = "grok-imagine-image-2.0"
         chat_models, image_models = app.fetch_models()
         if chat_models and image_models:
             print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
-            print(f"🎨 Default image model: grok-imagine-image-quality")
+            print(f"🎨 Default image model: grok-imagine-image-2.0")
     
     interface.launch(share=False)
 
