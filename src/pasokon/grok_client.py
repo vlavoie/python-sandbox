@@ -2,12 +2,14 @@
 
 import os
 import base64
+import io
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import httpx
 from dataclasses import dataclass
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import Image
 import time
 
 # Load environment variables from .env file
@@ -112,16 +114,19 @@ class GrokClient:
             return text.strip()
     
     def _encode_image(self, image_path: str) -> str:
-        """Encode an image to base64.
-        
-        Args:
-            image_path: Path to the image file.
-            
-        Returns:
-            Base64 encoded image string.
-        """
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
+        """Encode an image to base64 JPEG, flattening transparency onto white."""
+        img = Image.open(image_path)
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
     
     def generate_prompt(
         self,
