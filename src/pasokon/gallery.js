@@ -107,6 +107,21 @@
         if (e.key === 'ArrowRight') show(idx + 1);
     });
 
+    // ── Review input: Shift+Enter inserts newline, Enter submits ──────────
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        const textarea = e.target.closest('#review-input textarea');
+        if (!textarea) return;
+        if (!e.shiftKey) return; // plain Enter: let Gradio's submit handler fire
+        // Shift+Enter: insert newline at cursor
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const s = textarea.selectionStart, end = textarea.selectionEnd;
+        textarea.value = textarea.value.slice(0, s) + '\n' + textarea.value.slice(end);
+        textarea.selectionStart = textarea.selectionEnd = s + 1;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }, true);
+
     // ── Thumbnail click → lightbox ─────────────────────────────────────
     document.addEventListener('click', (e) => {
         if (!e.target.matches('.psk-thumb')) return;

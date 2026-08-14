@@ -662,18 +662,20 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                         height=500,
                         show_label=False,
                         bubble_full_width=False,
+                        type="messages",
                     )
 
                     with gr.Row(equal_height=True):
                         review_user_input = gr.Textbox(
-                            placeholder="Describe issues, or just say 'review these images'. Refer to failed images as 'failed image 1', 'failed image 2', etc.",
-                            lines=2,
-                            max_lines=6,
-                            scale=9,
+                            placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
+                            lines=1,
+                            max_lines=4,
+                            scale=10,
                             show_label=False,
-                            container=False
+                            container=False,
+                            elem_id="review-input"
                         )
-                        send_review_btn = gr.Button("Send", variant="primary", scale=1, min_width=90)
+                        send_review_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
                     
                     # Thumbnail strip for images under review
                     failed_images_gallery = gr.HTML()

@@ -10,6 +10,21 @@ from typing import List, Optional, Tuple
 from PIL import Image
 
 
+def _normalize_chat_history(history: list) -> list:
+    """Convert old tuple/list pairs to the messages-dict format Gradio 5 expects."""
+    normalized = []
+    for msg in history:
+        if isinstance(msg, dict):
+            normalized.append(msg)
+        elif isinstance(msg, (list, tuple)) and len(msg) == 2:
+            user_msg, assistant_msg = msg
+            if user_msg:
+                normalized.append({"role": "user", "content": str(user_msg)})
+            if assistant_msg:
+                normalized.append({"role": "assistant", "content": str(assistant_msg)})
+    return normalized
+
+
 class ProjectState:
     """Holds all workflow state and handles persistence to disk."""
 
@@ -276,7 +291,7 @@ class ProjectState:
             self.review_mode = state.get("review_mode", "phase1")
             self.greenzone_image_path = state.get("greenzone_image_path")
             self.current_phase2_description = state.get("current_phase2_description", "")
-            self.phase1_review_history = state.get("phase1_review_history", [])
+            self.phase1_review_history = _normalize_chat_history(state.get("phase1_review_history", []))
             self.phase1_review_context = state.get("phase1_review_context", {})
             self.chat_model = state.get("chat_model", "grok-4.20")
             self.image_model = state.get("image_model", "grok-imagine-image-2.0")
