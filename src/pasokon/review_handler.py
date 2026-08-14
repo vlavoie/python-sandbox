@@ -227,16 +227,16 @@ Failed image files being reviewed:
         except Exception as e:
             return history, f"❌ Error: {str(e)}"
 
-    def extract_prompt_from_phase1_chat(self) -> Tuple[str, str, Any]:
+    def extract_prompt_from_phase1_chat(self) -> Tuple[str, Any]:
         """Extract the final prompt from the Phase 1 review chat and send to generation tab."""
         if not self.phase1_review_history:
-            return "", "❌ No review conversation found. Start a review first.", gr.update()
+            return "", gr.update()
 
         for user_msg, assistant_msg in reversed(self.phase1_review_history):
             if assistant_msg:
                 from pasokon.grok_client import GrokClient
                 cleaned_prompt = GrokClient._clean_prompt_text(assistant_msg)
                 if cleaned_prompt:
-                    return cleaned_prompt, "✅ Final prompt extracted and sent to Generation tab. Switched to Generate Images tab.", gr.update(selected="tab_generate_images")
+                    return cleaned_prompt, gr.update(selected="tab_generate_images")
 
-        return "", "❌ No valid prompt found in conversation history.", gr.update()
+        return "", gr.update()

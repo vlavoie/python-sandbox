@@ -31,6 +31,10 @@ class ProjectState:
         self.current_phase2_description = ""
         self.review_mode = "phase1"  # or "phase2" - controls image ordering in Tab 3
 
+        # Model preferences (persisted per project)
+        self.chat_model = "grok-4.20"
+        self.image_model = "grok-imagine-image-2.0"
+
         # Output directory for saved images
         self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
         self.output_dir.mkdir(exist_ok=True)
@@ -66,7 +70,7 @@ class ProjectState:
 
     def _get_project_display_string(self) -> str:
         """Generate the current project display string for the top bar."""
-        return f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action"
+        return f"**📁 Current Project:** `{self.project_name}` | 💾 Auto-saves after each action"
 
     def save_uploaded_file(self, file) -> Optional[str]:
         """Save an uploaded file to a temporary location."""
@@ -212,6 +216,8 @@ class ProjectState:
                 "current_phase2_description": self.current_phase2_description,
                 "phase1_review_history": self.phase1_review_history,
                 "phase1_review_context": self.phase1_review_context,
+                "chat_model": self.chat_model,
+                "image_model": self.image_model,
                 "last_saved": datetime.now().isoformat(),
             }
 
@@ -245,12 +251,12 @@ class ProjectState:
                 if last_project_path.exists():
                     project_name = last_project_path.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, []
+                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
 
             metadata_path = self._get_project_metadata_path(project_name)
 
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, []
+                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
 
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -268,6 +274,8 @@ class ProjectState:
             self.current_phase2_description = state.get("current_phase2_description", "")
             self.phase1_review_history = state.get("phase1_review_history", [])
             self.phase1_review_context = state.get("phase1_review_context", {})
+            self.chat_model = state.get("chat_model", "grok-4.20")
+            self.image_model = state.get("image_model", "grok-imagine-image-2.0")
 
             last_saved = state.get("last_saved", "unknown")
 
@@ -299,10 +307,10 @@ class ProjectState:
 📸 Generated images: {len(self.generated_images)}
 🔄 Iterations: {self.iteration_count}
 💬 Review history: {len(self.phase1_review_history)} message(s)
-🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display
+🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display, self.chat_model, self.image_model
 
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, []
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, [], "grok-4.20", "grok-imagine-image-2.0"
 
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -337,7 +345,7 @@ class ProjectState:
     def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], List]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, []
+            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model
 
         # Sanitize project name (remove special characters)
         sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
@@ -368,6 +376,8 @@ class ProjectState:
                 [] if is_new_project else self.additional_images_paths,
                 [] if is_new_project else self.phase1_review_history,
                 None if is_new_project else self.greenzone_image_path,
-                [] if is_new_project else self.generated_images  # output_gallery
+                [] if is_new_project else self.generated_images,
+                self.chat_model,
+                self.image_model,
             )
-        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.generated_images
+        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.generated_images, self.chat_model, self.image_model

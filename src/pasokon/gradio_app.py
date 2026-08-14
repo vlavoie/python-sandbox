@@ -71,10 +71,10 @@ class FPVPOVApp(ReviewHandler):
         """Initialize the Grok client with API key."""
         try:
             self.client = GrokClient(api_key=api_key)
-            
-            # Fetch available models
+            # Apply saved model preferences from project state
+            self.client.chat_model = self.chat_model
+            self.client.image_model = self.image_model
             self.fetch_models()
-            
             return "✅ API key configured successfully!"
         except Exception as e:
             return f"❌ Error: {str(e)}"
@@ -130,17 +130,19 @@ class FPVPOVApp(ReviewHandler):
     
     def update_chat_model(self, model_name: str) -> str:
         """Update the chat model used by the client."""
+        self.chat_model = model_name
         if self.client:
             self.client.chat_model = model_name
-            return f"✅ Chat model updated to: {model_name}"
-        return "❌ Client not initialized"
-    
+        self.save_project_state()
+        return f"✅ Chat model set to: {model_name}"
+
     def update_image_model(self, model_name: str) -> str:
         """Update the image model used by the client."""
+        self.image_model = model_name
         if self.client:
             self.client.image_model = model_name
-            return f"✅ Image model updated to: {model_name}"
-        return "❌ Client not initialized"
+        self.save_project_state()
+        return f"✅ Image model set to: {model_name}"
     
     def generate_initial_prompt(
         self,
@@ -151,13 +153,13 @@ class FPVPOVApp(ReviewHandler):
     ) -> Tuple[str, str, Any]:
         """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
         if not self.client:
-            return "❌ Please configure your API key first.", "", gr.update()
+            return "", gr.update()
 
         if not reference_image:
-            return "❌ Please upload a character reference image.", "", gr.update()
+            return "", gr.update()
 
         if not scene_description.strip():
-            return "❌ Please provide a scene description.", "", gr.update()
+            return "", gr.update()
 
         is_phase2 = greenzone_image is not None
 
@@ -214,7 +216,6 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     skill_content=phase2_prefix + self.prompt_skill,
                     additional_images=[self.greenzone_image_path]    # IMAGE_1 = greenzone
                 )
-                status = "✅ Phase 2 enhancement prompt generated!"
             else:
                 self.greenzone_image_path = None
                 self.review_mode = "phase1"
@@ -225,10 +226,9 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     skill_content=self.prompt_skill,
                     additional_images=self.additional_images_paths if self.additional_images_paths else None
                 )
-                status = "✅ Prompt generated successfully!"
 
             self.save_project_state()
-            return status, self.current_prompt, gr.update(selected="tab_generate_images")
+            return self.current_prompt, gr.update(selected="tab_generate_images")
 
         except Exception as e:
             error_msg = str(e)
@@ -237,7 +237,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             print(f"{'='*60}")
             print(error_msg)
             print(f"{'='*60}\n")
-            return f"❌ Error generating prompt: {error_msg}", "", gr.update()
+            return "", gr.update()
     
     def save_images_permanently(
         self,
@@ -416,8 +416,8 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
     # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
 
     def _generate_images_for_ui(self, prompt, num_images, aspect_ratio):
-        status, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
-        return status, render_gallery_html(images), render_gallery_html(failed)
+        _, images, failed = self.generate_images_batch(prompt, num_images, aspect_ratio)
+        return render_gallery_html(images), render_gallery_html(failed)
 
     def _load_project_for_ui(self, project_name=None):
         result = list(self.load_project_state(project_name))
@@ -466,7 +466,7 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             
             # Current project indicator
             with gr.Row():
-                current_project_display = gr.Markdown(f"**📁 Current Project:** `{self.project_name}` | **🎯 Mode:** `{self.review_mode}` | 💾 Auto-saves after each action")
+                current_project_display = gr.Markdown(self._get_project_display_string())
                 manual_save_btn = gr.Button("💾 Save Now", scale=0, size="sm")
             
             # Main workflow tabs
@@ -498,12 +498,36 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                             )
                             load_project_btn = gr.Button("📂 Load Selected Project")
                     
+                    gr.Markdown("### Model Selection")
+                    with gr.Row():
+                        chat_model_dropdown = gr.Dropdown(
+                            choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
+                            value=self.chat_model,
+                            label="💬 Chat Model",
+                            info="For prompt generation & review",
+                            interactive=True,
+                            allow_custom_value=True
+                        )
+                        image_model_dropdown = gr.Dropdown(
+                            choices=[
+                                "grok-imagine-image-2.0",
+                                "grok-imagine-image-quality",
+                                "grok-imagine-image-pro",
+                                "grok-imagine-image"
+                            ],
+                            value=self.image_model,
+                            label="🎨 Image Model",
+                            info="For image generation",
+                            interactive=True,
+                            allow_custom_value=True
+                        )
+
                     project_mgmt_status = gr.Textbox(
                         label="Project Status",
                         interactive=False,
                         lines=8
                     )
-                
+
                 # Tab 2: Generate Prompt
                 with gr.Tab("2️⃣ Generate Prompt", id="tab_generate_prompt"):
                     gr.Markdown("### Upload reference image and describe your scene")
@@ -618,48 +642,9 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
                     
                     extract_and_send_btn = gr.Button("📤 Extract Final Prompt & Send to Generation Tab", variant="primary")
                     
-                    # Event handlers defined after unified_status is created (see bottom of UI)
                 
             
-            # Unified Status Bar (bottom of UI)
-            gr.Markdown("---")
-            gr.Markdown("### 📊 Status & Model Selection")
-            
-            with gr.Row():
-                with gr.Column(scale=1):
-                    chat_model_dropdown = gr.Dropdown(
-                        choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
-                        value="grok-4.20",
-                        label="💬 Chat Model",
-                        info="For prompt generation & review",
-                        interactive=True,
-                        allow_custom_value=True
-                    )
-                
-                with gr.Column(scale=1):
-                    image_model_dropdown = gr.Dropdown(
-                        choices=[
-                            "grok-imagine-image-2.0",
-                            "grok-imagine-image-quality",
-                            "grok-imagine-image-pro",
-                            "grok-imagine-image"
-                        ],
-                        value="grok-imagine-image-2.0",
-                        label="🎨 Image Model",
-                        info="For image generation",
-                        interactive=True,
-                        allow_custom_value=True
-                    )
-            
-            unified_status = gr.Textbox(
-                label="System Status",
-                interactive=False,
-                lines=3,
-                value="Ready. Configure your API key above to get started."
-            )
-            
-            # Wire up all event handlers that use unified_status
-            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery]
+            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery, chat_model_dropdown, image_model_dropdown]
 
             # Tab 1: Project Management
             set_project_btn.click(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
@@ -669,41 +654,41 @@ Do NOT swap these roles. <IMAGE_0> is always the character reference in this wor
             project_selector.focus(fn=lambda: gr.Dropdown(choices=self.list_projects()), outputs=[project_selector])
 
             # Tab 2: Generate Prompt — reference image / additional images / greenzone pre-save on change
-            reference_image.change(fn=self.update_reference_image, inputs=[reference_image], outputs=[unified_status])
-            additional_images.change(fn=self.update_additional_images, inputs=[additional_images], outputs=[unified_status])
-            greenzone_image.change(fn=self.update_greenzone_image, inputs=[greenzone_image], outputs=[unified_status])
+            reference_image.change(fn=self.update_reference_image, inputs=[reference_image])
+            additional_images.change(fn=self.update_additional_images, inputs=[additional_images])
+            greenzone_image.change(fn=self.update_greenzone_image, inputs=[greenzone_image])
 
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
                 inputs=[reference_image, scene_description, additional_images, greenzone_image],
-                outputs=[unified_status, prompt_to_use, main_tabs]
+                outputs=[prompt_to_use, main_tabs]
             )
 
             # Tab 3: Generate Images
             generate_images_btn.click(
                 fn=self._generate_images_for_ui,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
-                outputs=[unified_status, output_gallery, failed_images_gallery]
+                outputs=[output_gallery, failed_images_gallery]
             )
 
             # Tab 4: Review & Correct
             def send_message(msg, history, uploaded_files, current_gallery_html):
                 if not msg.strip():
-                    return history, "", "", current_gallery_html
+                    return history, "", current_gallery_html
                 if not history:
                     review_result = self.start_phase1_review(msg, uploaded_files)
-                    return review_result[0], "", review_result[1], render_gallery_html(review_result[2])
+                    return review_result[0], "", render_gallery_html(review_result[2])
                 else:
                     cont_result = self.continue_phase1_review(msg, history)
-                    return cont_result[0], "", "", current_gallery_html
+                    return cont_result[0], "", current_gallery_html
 
-            send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
-            review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
-            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, outputs=[prompt_to_use, unified_status, main_tabs])
+            send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
+            review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
+            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, outputs=[prompt_to_use, main_tabs])
 
             # Model selection
-            chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown], outputs=[unified_status])
-            image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown], outputs=[unified_status])
+            chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown])
+            image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown])
 
             # Auto-load last project on page load
             app.load(fn=lambda: self._load_project_for_ui(), outputs=OUTPUTS_PROJECT)
