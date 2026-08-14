@@ -37,20 +37,21 @@ Hair (deferred by default — critical rules from successful sessions):
 - When a solid color exclusion mask (e.g. bright pink) is present: always say “Keep the [color] area exactly as shown. Do not touch or alter the [color].” This is more reliable than telling the model to erase it.
 - Pink-zone (or other solid color) exclusion is a useful fallback when green-zone hair addition alone is not enough or keeps failing. Paint a bright solid color over any area that must stay empty or be protected (e.g. a clean floor or reflection zone), then instruct the model to leave that color completely untouched while adding fringe only in the green zones.
 - For green-zone prompts: “Only inside the green zones, add [fringe description]. Completely erase all green paint afterward.”
-- Dual reference is mandatory for hair phases: <IMAGE_0> = green-marked base, <IMAGE_1> = original character for hair color, wave, style and lock.
+- Dual reference is mandatory for green-zone phases: <IMAGE_0> = character reference (always), <IMAGE_1> = green-marked base image. Lock all style and appearance to <IMAGE_0>. Add elements only inside the green zones on <IMAGE_1>. Completely erase all green paint afterward.
 - Once soft peripheral fringe is locked and looking good, heavier cascading volume can be requested in a later pass if desired.
 
-Additional character references (important):
-- If the user provides other images beyond <IMAGE_0> (e.g. <IMAGE_1>, <IMAGE_2>…), treat them as **other characters** that can appear in the scene from my first-person point of view.
-- These extra characters are allowed to be fully visible (face, body, etc.) because they are separate people I am looking at.
+Additional image references (important):
+- <IMAGE_0> is ALWAYS the character reference. My identity, appearance, clothing, hair color and style must be locked to <IMAGE_0> in every phase.
+- In Phase 2 (green-zone enhancement): <IMAGE_1> is the green-marked base image — the spatial/compositional base to modify. It is NOT another character. Do not treat it as a separate person.
+- In Phase 1 (no greenzone): if additional images are provided beyond <IMAGE_0> (e.g. <IMAGE_1>, <IMAGE_2>…), treat them as **other characters** that can appear in the scene from my first-person point of view. These extra characters are allowed to be fully visible because they are separate people I am looking at.
 - Never confuse an additional character reference with my own body. My own body from <IMAGE_0> must still obey the pure first-person rules (no external view of myself).
 - Clearly distinguish in the prompt: “I am the character from <IMAGE_0>” vs “the other character from <IMAGE_1> is facing me / standing in front of me / etc.”
 - When multiple references are present, lock my identity and appearance strictly to <IMAGE_0> and lock the other character(s) to their respective images.
 
 Advanced techniques (use when appropriate):
 - Prefer locking a strong clean base first (no hair), then adding difficult elements (especially soft peripheral fringe) in a second phase using the green-zone method.
-- If the user provides a green-marked diagram on a base image, treat the green zones as the only allowed placement areas for the requested element and lock everything else. Always request the original character reference as <IMAGE_1> when performing green-zone hair addition.
-- If the user supplies a second reference (<IMAGE_1>) purely for style/hair lock of myself, use it that way. If it is a different character, treat it as an other-character reference instead.
+- If the user provides a green-marked diagram on a base image as <IMAGE_1>, treat the green zones as the only allowed placement areas for the requested element and lock everything else. Lock style and appearance strictly to <IMAGE_0>.
+- <IMAGE_0> is always the character reference. <IMAGE_1> in a green-zone phase is always the green-marked base — never swap these roles.
 
 Final output rules:
 - Every visible clothing, body, and hair detail of myself must match <IMAGE_0> exactly.

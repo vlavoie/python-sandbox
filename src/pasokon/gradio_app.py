@@ -178,7 +178,7 @@ class FPVPOVApp:
     def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], str, List]:
         """Set the project name and reset iteration count."""
         if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
+            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, []
         
         # Sanitize project name (remove special characters)
         sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
@@ -391,12 +391,12 @@ class FPVPOVApp:
                 if last_project_path.exists():
                     project_name = last_project_path.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
+                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, []
             
             metadata_path = self._get_project_metadata_path(project_name)
             
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
+                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, []
             
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
@@ -430,12 +430,12 @@ class FPVPOVApp:
             # Prepare additional images (filter to only existing paths)
             additional_images_to_load = [p for p in self.additional_images_paths if Path(p).exists()]
             
-            # Prepare Phase 2 greenzone image and description
             greenzone_image_to_load = self.greenzone_image_path if (self.greenzone_image_path and Path(self.greenzone_image_path).exists()) else None
-            phase2_desc_to_load = self.current_phase2_description
-            
+            # For Phase 2 projects, show the user's original enhancement description, not the constructed scene text
+            scene_to_show = self.current_phase2_description if self.review_mode == "phase2" else self.current_scene
+
             return f"""✅ Loaded project '{self.project_name}'
-            
+
 📅 Last saved: {last_saved}
 🎯 Mode: {self.review_mode}
 📝 Prompt: {'Set' if self.current_prompt else 'Not set'}
@@ -445,10 +445,10 @@ class FPVPOVApp:
 📸 Generated images: {len(self.generated_images)}
 🔄 Iterations: {self.iteration_count}
 💬 Review history: {len(self.phase1_review_history)} message(s)
-🎨 Phase 2: {'✅ Configured' if greenzone_image_to_load else '❌ Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, self.current_scene, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, phase2_desc_to_load, images_to_display
-            
+🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display
+
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, "", []
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, []
     
     def list_projects(self) -> List[str]:
         """List all available projects."""
@@ -484,23 +484,24 @@ class FPVPOVApp:
         self,
         reference_image,
         scene_description: str,
-        additional_images: Optional[List] = None
+        additional_images: Optional[List] = None,
+        greenzone_image=None
     ) -> Tuple[str, str, Any]:
-        """Generate the initial Grok Imagine prompt."""
+        """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
         if not self.client:
             return "❌ Please configure your API key first.", "", gr.update()
-        
+
         if not reference_image:
             return "❌ Please upload a character reference image.", "", gr.update()
-        
+
         if not scene_description.strip():
             return "❌ Please provide a scene description.", "", gr.update()
-        
+
+        is_phase2 = greenzone_image is not None
+
         try:
-            # Save reference image
             self.reference_image_path = self.save_uploaded_file(reference_image)
-            
-            # Save additional images if provided
+
             self.additional_images_paths = []
             if additional_images:
                 for img in additional_images:
@@ -508,21 +509,65 @@ class FPVPOVApp:
                         path = self.save_uploaded_file(img)
                         if path:
                             self.additional_images_paths.append(path)
-            
-            # Generate prompt
-            self.current_scene = scene_description
-            self.current_prompt = self.client.generate_prompt(
-                reference_image=self.reference_image_path,
-                scene_description=scene_description,
-                skill_content=self.prompt_skill,
-                additional_images=self.additional_images_paths if self.additional_images_paths else None
-            )
-            
-            # Auto-save project state
+
+            if is_phase2:
+                self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
+                self.current_phase2_description = scene_description
+                self.review_mode = "phase2"
+
+                full_scene = f"""Phase 2 Enhancement - Green Zone Addition:
+{scene_description}
+
+Context:
+- <IMAGE_0> is the character reference for style/appearance matching
+- <IMAGE_1> is the base image with green/pink zones marking where to add elements
+- Only add elements inside the marked zones on <IMAGE_1>
+- Completely erase all green/pink paint afterward
+- Lock appearance/style to <IMAGE_0>
+- Use <IMAGE_1> as the spatial base to modify"""
+
+                self.current_scene = full_scene
+
+                phase2_prefix = """PHASE 2 ENHANCEMENT MODE
+You are generating a Phase 2 green-zone enhancement prompt.
+
+CRITICAL IMAGE ASSIGNMENT — override any conflicting convention in the skill below:
+- <IMAGE_0> is the CHARACTER REFERENCE — lock all style, appearance, hair color, and identity to this image
+- <IMAGE_1> is the GREEN-MARKED BASE IMAGE — the spatial/compositional base to modify
+
+The generated prompt must instruct the image model to:
+- Add the specified elements ONLY inside the green/pink zones on <IMAGE_1>
+- Completely erase all green/pink paint so no trace remains
+- Lock all appearance and style strictly to <IMAGE_0>
+- Use <IMAGE_1> as the spatial base
+
+Do NOT swap these roles. <IMAGE_0> is always the character reference in this workflow.
+
+---
+
+"""
+                self.current_prompt = self.client.generate_prompt(
+                    reference_image=self.reference_image_path,       # IMAGE_0 = character
+                    scene_description=full_scene,
+                    skill_content=phase2_prefix + self.prompt_skill,
+                    additional_images=[self.greenzone_image_path]    # IMAGE_1 = greenzone
+                )
+                status = "✅ Phase 2 enhancement prompt generated!"
+            else:
+                self.greenzone_image_path = None
+                self.review_mode = "phase1"
+                self.current_scene = scene_description
+                self.current_prompt = self.client.generate_prompt(
+                    reference_image=self.reference_image_path,
+                    scene_description=scene_description,
+                    skill_content=self.prompt_skill,
+                    additional_images=self.additional_images_paths if self.additional_images_paths else None
+                )
+                status = "✅ Prompt generated successfully!"
+
             self.save_project_state()
-            
-            return "✅ Prompt generated successfully!", self.current_prompt, gr.update(selected="tab_generate_images")
-            
+            return status, self.current_prompt, gr.update(selected="tab_generate_images")
+
         except Exception as e:
             error_msg = str(e)
             print(f"\n{'='*60}")
@@ -767,7 +812,7 @@ IMPORTANT: Always start your response with a brief 1-3 sentence explanation of w
                 original_prompt=self.current_prompt,
                 scene_description=scene_description,
                 reference_image=reference_image,
-                skill_content=self.review_skill,
+                skill_content=self._get_review_skill(),
                 additional_images=additional_images
             )
             
@@ -817,7 +862,9 @@ Failed image files being reviewed:
         
         try:
             # Build conversation context with images
-            messages = [{"role": "system", "content": self.review_skill}]
+            review_mode = self.phase1_review_context.get("review_mode", self.review_mode)
+            effective_review_skill = self._get_review_skill() if review_mode == "phase2" else self.review_skill
+            messages = [{"role": "system", "content": effective_review_skill}]
             
             # Add image context to first message
             if self.phase1_review_context:
@@ -904,6 +951,14 @@ Failed image files being reviewed:
         
         return "", "❌ No valid prompt found in conversation history.", gr.update()
     
+    def update_greenzone_image(self, greenzone_image) -> str:
+        """Pre-save greenzone image so Save Now works before Generate Prompt is clicked."""
+        if greenzone_image:
+            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
+            return "✅ Green-zone base image updated"
+        self.greenzone_image_path = None
+        return ""
+
     def update_reference_image(self, reference_image) -> str:
         """Update the reference image path when a new image is uploaded."""
         if reference_image:
@@ -925,186 +980,27 @@ Failed image files being reviewed:
             self.additional_images_paths = []
         return ""
     
-    def update_greenzone_image(self, greenzone_image) -> str:
-        """Update the greenzone image path when a new image is uploaded."""
-        if greenzone_image:
-            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
-            return "✅ Green-zone base image updated (click 'Save Now' to persist)"
-        return ""
-    
-    def set_phase1_mode(self) -> Tuple[str, str]:
-        """Reset to Phase 1 review mode."""
-        self.review_mode = "phase1"
-        return "✅ Switched to Phase 1 mode - reviews will use character + additional characters", self._get_project_display_string()
-    
-    def set_phase2_mode_and_generate_prompt(
-        self,
-        greenzone_image,
-        enhancement_description: str
-    ) -> Tuple[str, str, str]:
-        """Set Phase 2 context and generate enhancement prompt.
-        
-        This sets up the context for Phase 2 review (which uses Tab 3).
-        After generating images in Tab 2, come back to Tab 3 to review them.
-        """
-        if not self.client:
-            return "❌ Please configure your API key first.", "", self._get_project_display_string(), gr.update()
+    def _get_review_skill(self) -> str:
+        """Return review skill, prepending a Phase 2 override when in phase2 mode."""
+        if self.review_mode != "phase2":
+            return self.review_skill
+        prefix = """PHASE 2 REVIEW MODE — IMAGE ASSIGNMENT OVERRIDE
+The image assignments below are FIXED for this session. Any conflicting convention in the skill (e.g. "IMAGE_0 = green-marked base") must be IGNORED.
 
-        if not greenzone_image:
-            return "❌ Please upload the green-zoned base image.", "", self._get_project_display_string(), gr.update()
+- <IMAGE_0> = CHARACTER REFERENCE — lock all style, appearance, hair color and identity to this image
+- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the spatial base with green/pink zones showing where elements must be added
 
-        if not self.reference_image_path:
-            return "❌ No character reference found. Please upload a character reference in Tab 1 first.", "", self._get_project_display_string(), gr.update()
-
-        if not enhancement_description.strip():
-            return "❌ Please provide enhancement description.", "", self._get_project_display_string(), gr.update()
-
-        try:
-            # Save greenzone image and set Phase 2 mode
-            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
-            self.current_phase2_description = enhancement_description
-            self.review_mode = "phase2"
-            
-            # Build Phase 2 scene description
-            # IMAGE_0 = character reference, IMAGE_1 = green-marked base (app convention)
-            phase2_scene = f"""Phase 2 Enhancement - Green Zone Addition:
-{enhancement_description}
-
-Context:
-- <IMAGE_0> is the character reference for style/appearance matching
-- <IMAGE_1> is the base image with green/pink zones marking where to add elements
-- Only add elements inside the marked zones on <IMAGE_1>
-- Completely erase all green/pink paint afterward
-- Lock appearance/style to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base to modify"""
-
-            # Generate enhancement prompt
-            self.current_scene = phase2_scene
-            phase2_skill_prefix = """PHASE 2 ENHANCEMENT MODE
-You are generating a Phase 2 green-zone enhancement prompt.
-
-CRITICAL IMAGE ASSIGNMENT — override any conflicting convention in the skill below:
-- <IMAGE_0> is the CHARACTER REFERENCE — lock all style, appearance, hair color, and identity to this image
-- <IMAGE_1> is the GREEN-MARKED BASE IMAGE — the spatial/compositional base to modify
-
-The generated prompt must instruct the image model to:
-- Add the specified elements ONLY inside the green/pink zones on <IMAGE_1>
-- Completely erase all green/pink paint so no trace remains
-- Lock all appearance and style strictly to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base
-
-Do NOT swap these roles. <IMAGE_0> is always the character reference in this workflow.
+When reviewing failed images:
+- Check that elements were added only inside the green/pink zones on <IMAGE_1>
+- Check that appearance/style is locked to <IMAGE_0>
+- Check that all green/pink paint was completely erased
+When writing a corrected prompt, always keep <IMAGE_0> = character reference and <IMAGE_1> = green-marked base. Do NOT swap them.
 
 ---
 
 """
-            self.current_prompt = self.client.generate_prompt(
-                reference_image=self.reference_image_path,   # <IMAGE_0> = character reference
-                scene_description=phase2_scene,
-                skill_content=phase2_skill_prefix + self.prompt_skill,
-                additional_images=[self.greenzone_image_path]  # <IMAGE_1> = green-marked base
-            )
-            
-            status = """✅ Phase 2 enhancement prompt generated! Switching to Generate Images tab.
+        return prefix + self.review_skill
 
-🎯 Phase 2 mode active - Tab 3 will use:
-   • <IMAGE_0> = Character reference (style lock)
-   • <IMAGE_1> = Green-zoned base (spatial guide)"""
-
-            # Auto-save project state
-            self.save_project_state()
-
-            return status, self.current_prompt, self._get_project_display_string(), gr.update(selected="tab_generate_images")
-            
-        except Exception as e:
-            return f"❌ Error: {str(e)}", "", self._get_project_display_string(), gr.update()
-
-    def review_enhancement(
-        self,
-        green_base_image,
-        character_reference,
-        enhancement_description: str,
-        failed_enhancement_images: Optional[List] = None
-    ) -> Tuple[str, str]:
-        """Review failed enhancement images and generate corrected prompt (legacy method).
-        
-        Args:
-            green_base_image: The base image with green/pink zones (<IMAGE_1>)
-            character_reference: Original character reference (<IMAGE_0>)
-            enhancement_description: What was supposed to be added
-            failed_enhancement_images: Images that failed to meet requirements
-        """
-        if not self.client:
-            return "❌ Please configure your API key first.", ""
-        
-        if not green_base_image:
-            return "❌ Please upload the green-zoned base image.", ""
-        
-        if not character_reference:
-            return "❌ Please upload the character reference image.", ""
-        
-        if not enhancement_description.strip():
-            return "❌ Please provide enhancement description.", ""
-        
-        # Save the base images
-        green_base_path = self.save_uploaded_file(green_base_image)
-        char_ref_path = self.save_uploaded_file(character_reference)
-        
-        # Get failed images to review
-        images_to_review = []
-        if failed_enhancement_images:
-            for img in failed_enhancement_images:
-                if img is not None:
-                    path = self.save_uploaded_file(img)
-                    if path:
-                        images_to_review.append(path)
-        elif self.generated_images:
-            images_to_review = self.generated_images
-        
-        if not images_to_review:
-            return "❌ No enhancement images to review. Please generate or upload images first.", ""
-        
-        try:
-            # Create Phase 2 specific scene description
-            phase2_scene = f"""Phase 2 Enhancement Review - Green Zone Addition:
-{enhancement_description}
-
-Context:
-- <IMAGE_0> is the character reference for style/appearance matching (SAME as Phase 1)
-- <IMAGE_1> is the base image with green/pink zones marking where elements should be added
-- Only add elements inside the marked zones on <IMAGE_1>
-- Completely erase all green/pink paint afterward
-- Lock appearance/style to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base to modify
-
-Review the failed enhancement attempts and identify what went wrong."""
-            
-            # Get corrected prompt
-            # IMPORTANT: Keep character reference as <IMAGE_0> for consistency with Phase 1
-            corrected_response = self.client.review_images(
-                failed_images=images_to_review,
-                original_prompt=self.current_prompt,
-                scene_description=phase2_scene,
-                reference_image=char_ref_path,  # <IMAGE_0> = Character reference (consistent!)
-                skill_content=self.review_skill,
-                additional_images=[green_base_path]  # <IMAGE_1> = Green-marked base
-            )
-            
-            # Extract just the prompt if it's in a code block
-            if "```" in corrected_response:
-                parts = corrected_response.split("```")
-                if len(parts) >= 3:
-                    corrected_prompt = parts[1].strip()
-                else:
-                    corrected_prompt = corrected_response
-            else:
-                corrected_prompt = corrected_response
-            
-            return "✅ Enhancement review complete! Corrected prompt generated.", corrected_prompt
-            
-        except Exception as e:
-            return f"❌ Error during enhancement review: {str(e)}", ""
-    
     def create_interface(self) -> gr.Blocks:
         """Create the Gradio interface."""
         with gr.Blocks(title="FPV POV Image Generator", theme=gr.themes.Soft()) as app:
@@ -1181,27 +1077,33 @@ Review the failed enhancement attempts and identify what went wrong."""
                 # Tab 2: Generate Prompt
                 with gr.Tab("2️⃣ Generate Prompt", id="tab_generate_prompt"):
                     gr.Markdown("### Upload reference image and describe your scene")
-                    
+                    gr.Markdown("*Upload a green-zone base image to activate Phase 2 (element addition) mode automatically.*")
+
                     with gr.Row():
                         with gr.Column():
                             reference_image = gr.Image(
-                                label="Character Reference Image (<IMAGE_0>)",
+                                label="Character Reference (<IMAGE_0>)",
                                 type="filepath",
                                 image_mode=None
                             )
                             additional_images = gr.File(
-                                label="Additional Character References (optional, <IMAGE_1>, <IMAGE_2>...)",
+                                label="Additional Characters (optional, Phase 1 only — <IMAGE_1>, <IMAGE_2>…)",
                                 file_count="multiple",
                                 type="filepath"
                             )
-                        
+                            greenzone_image = gr.Image(
+                                label="Green-zone Base Image (optional — triggers Phase 2, <IMAGE_1>)",
+                                type="filepath",
+                                image_mode=None
+                            )
+
                         with gr.Column():
                             scene_description = gr.Textbox(
-                                label="Scene Description",
-                                placeholder="Describe your scene in detail...",
+                                label="Scene / Enhancement Description",
+                                placeholder="Phase 1: describe your scene.\nPhase 2: describe what to add in the green zones.",
                                 lines=10
                             )
-                    
+
                     generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
                 
                 # Tab 3: Image Generation
@@ -1299,27 +1201,6 @@ Review the failed enhancement attempts and identify what went wrong."""
                     
                     # Event handlers defined after unified_status is created (see bottom of UI)
                 
-                # Tab 5: Phase 2 - Manual Enhancement
-                with gr.Tab("5️⃣ Phase 2: Enhancements", id="tab_phase2"):
-                    with gr.Row():
-                        with gr.Column():
-                            green_base_image = gr.Image(
-                                label="Green-Marked Base Image (<IMAGE_1>)",
-                                type="filepath",
-                                image_mode=None
-                            )
-                        
-                        with gr.Column():
-                            enhancement_description = gr.Textbox(
-                                label="Enhancement Description",
-                                placeholder="Describe what to add in the green zones (e.g., 'soft long dark curly peripheral fringe hair')",
-                                lines=8
-                            )
-                    
-                    enhance_prompt_btn = gr.Button("🎯 Generate Enhancement Prompt", variant="primary")
-                    reset_to_phase1_btn = gr.Button("🔄 Reset to Phase 1 Mode (for regular reviews)")
-                    
-                    # Event handlers defined after unified_status is created (see bottom of UI)
             
             # Unified Status Bar (bottom of UI)
             gr.Markdown("---")
@@ -1359,132 +1240,54 @@ Review the failed enhancement attempts and identify what went wrong."""
             )
             
             # Wire up all event handlers that use unified_status
+            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery]
+
             # Tab 1: Project Management
-            set_project_btn.click(
-                fn=self.set_project_name,
-                inputs=[project_name_input_dup],
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
-            )
-            
-            project_name_input_dup.submit(
-                fn=self.set_project_name,
-                inputs=[project_name_input_dup],
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
-            )
-            
-            load_project_btn.click(
-                fn=self.load_project_state,
-                inputs=[project_selector],
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
-            )
-            
-            manual_save_btn.click(
-                fn=self.save_project_state,
-                outputs=[project_mgmt_status]
-            )
-            
-            project_selector.focus(
-                fn=lambda: gr.Dropdown(choices=self.list_projects()),
-                outputs=[project_selector]
-            )
-            
-            # Update reference image when uploaded (so Save Now works without generating prompt)
-            reference_image.change(
-                fn=self.update_reference_image,
-                inputs=[reference_image],
-                outputs=[unified_status]
-            )
-            
-            # Update additional images when uploaded
-            additional_images.change(
-                fn=self.update_additional_images,
-                inputs=[additional_images],
-                outputs=[unified_status]
-            )
-            
-            # Tab 2: Generate Prompt
+            set_project_btn.click(fn=self.set_project_name, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
+            project_name_input_dup.submit(fn=self.set_project_name, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
+            load_project_btn.click(fn=self.load_project_state, inputs=[project_selector], outputs=OUTPUTS_PROJECT)
+            manual_save_btn.click(fn=self.save_project_state, outputs=[project_mgmt_status])
+            project_selector.focus(fn=lambda: gr.Dropdown(choices=self.list_projects()), outputs=[project_selector])
+
+            # Tab 2: Generate Prompt — reference image / additional images / greenzone pre-save on change
+            reference_image.change(fn=self.update_reference_image, inputs=[reference_image], outputs=[unified_status])
+            additional_images.change(fn=self.update_additional_images, inputs=[additional_images], outputs=[unified_status])
+            greenzone_image.change(fn=self.update_greenzone_image, inputs=[greenzone_image], outputs=[unified_status])
+
             generate_prompt_btn.click(
                 fn=self.generate_initial_prompt,
-                inputs=[reference_image, scene_description, additional_images],
+                inputs=[reference_image, scene_description, additional_images, greenzone_image],
                 outputs=[unified_status, prompt_to_use, main_tabs]
             )
-            
+
             # Tab 3: Generate Images
             generate_images_btn.click(
                 fn=self.generate_images_batch,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown],
                 outputs=[unified_status, output_gallery, failed_images_gallery]
             )
-            
+
             # Tab 4: Review & Correct
             def send_message(msg, history, uploaded_files, current_gallery):
                 if not msg.strip():
                     return history, "", "", current_gallery
-                
-                # Check if review has been started (history is empty)
                 if not history:
-                    # Start the review with the message as initial comment
                     review_result = self.start_phase1_review(msg, uploaded_files)
                     return review_result[0], "", review_result[1], review_result[2]
                 else:
-                    # Continue existing review (preserve the gallery)
                     cont_result = self.continue_phase1_review(msg, history)
                     return cont_result[0], "", "", current_gallery
-            
-            send_review_btn.click(
-                fn=send_message,
-                inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery],
-                outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery]
-            )
-            
-            review_user_input.submit(
-                fn=send_message,
-                inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery],
-                outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery]
-            )
-            
-            extract_and_send_btn.click(
-                fn=self.extract_prompt_from_phase1_chat,
-                outputs=[prompt_to_use, unified_status, main_tabs]
-            )
-            
-            # Tab 5: Phase 2 Enhancements
-            # Update greenzone image when uploaded (so Save Now works)
-            green_base_image.change(
-                fn=self.update_greenzone_image,
-                inputs=[green_base_image],
-                outputs=[unified_status]
-            )
-            
-            enhance_prompt_btn.click(
-                fn=self.set_phase2_mode_and_generate_prompt,
-                inputs=[green_base_image, enhancement_description],
-                outputs=[unified_status, prompt_to_use, current_project_display, main_tabs]
-            )
 
-            reset_to_phase1_btn.click(
-                fn=self.set_phase1_mode,
-                outputs=[unified_status, current_project_display]
-            )
-            
-            # Model selection updates
-            chat_model_dropdown.change(
-                fn=self.update_chat_model,
-                inputs=[chat_model_dropdown],
-                outputs=[unified_status]
-            )
-            
-            image_model_dropdown.change(
-                fn=self.update_image_model,
-                inputs=[image_model_dropdown],
-                outputs=[unified_status]
-            )
-            
+            send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
+            review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, unified_status, failed_images_gallery])
+            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, outputs=[prompt_to_use, unified_status, main_tabs])
+
+            # Model selection
+            chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown], outputs=[unified_status])
+            image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown], outputs=[unified_status])
+
             # Auto-load last project on page load
-            app.load(
-                fn=lambda: self.load_project_state(),
-                outputs=[project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, green_base_image, enhancement_description, output_gallery]
-            )
+            app.load(fn=lambda: self.load_project_state(), outputs=OUTPUTS_PROJECT)
             
         return app
 
