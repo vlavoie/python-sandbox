@@ -338,6 +338,7 @@ class WorkflowPanel(ABC):
                 {"role": "user", "content": user_display},
                 {"role": "assistant", "content": initial_review},
             ]
+            ps.save_project_state()
 
             mode = ctx.get("review_mode", "phase1")
             mode_label = "Phase 2 Enhancement" if mode == "phase2" else "Phase 1"
@@ -442,6 +443,7 @@ class WorkflowPanel(ABC):
                 {"role": "assistant", "content": ar},
             ]
             self.review_history = new_history
+            self.app.project_state.save_project_state()
             return new_history, ""
 
         except Exception as e:
