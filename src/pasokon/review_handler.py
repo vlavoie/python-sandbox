@@ -249,12 +249,12 @@ A primary failure mode is when the model regenerates the entire image instead of
         except Exception as e:
             return history, f"❌ Error: {str(e)}"
 
-    def extract_prompt_from_phase1_chat(self) -> Tuple[str, Any]:
+    def extract_prompt_from_phase1_chat(self, history: List) -> Tuple[str, Any]:
         """Extract the final prompt from the Phase 1 review chat and send to generation tab."""
-        if not self.phase1_review_history:
+        if not history:
             return "", gr.update()
 
-        for msg in reversed(self.phase1_review_history):
+        for msg in reversed(history):
             if msg["role"] == "assistant" and msg["content"]:
                 from pasokon.grok_client import GrokClient
                 cleaned_prompt = GrokClient._clean_prompt_text(msg["content"])

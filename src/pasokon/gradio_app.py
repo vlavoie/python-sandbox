@@ -476,11 +476,11 @@ Target: 60–120 words total. Spatial and specific. No ban lists. No repetition.
             if not images:
                 progress(1.0, desc="Warning: No images returned")
                 return render_gallery_html(self.generated_images), gr.update(), gr.update()
-            # New batch ready — stale review context would send wrong images to reviewer.
-            self.phase1_review_history = []
-            self.phase1_review_context = {}
+            # Keep the review conversation alive but point it at the freshly generated images.
+            if self.phase1_review_context:
+                self.phase1_review_context["failed_images"] = images
             progress(1.0, desc="Done")
-            return render_gallery_html(images), render_gallery_html(failed), gr.update(value=[])
+            return render_gallery_html(images), render_gallery_html(failed), gr.update()
         except Exception:
             progress(1.0, desc="Failed")
             return render_gallery_html(self.generated_images), gr.update(), gr.update()
@@ -772,7 +772,7 @@ Target: 60–120 words total. Spatial and specific. No ban lists. No repetition.
 
             send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
             review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
-            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, outputs=[prompt_to_use, main_tabs])
+            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, inputs=[review_chatbot], outputs=[prompt_to_use, main_tabs])
 
             # Model selection
             chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown])
