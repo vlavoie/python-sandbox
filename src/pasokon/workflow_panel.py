@@ -62,6 +62,9 @@ class WorkflowPanel(ABC):
         self._num_images_slider = None
         self._aspect_ratio_dropdown = None
         self._draft_mode_radio = None
+        self.image_model_dropdown = None
+        self.draft_model_dropdown = None
+        self.draft_aspect_ratio_dropdown = None
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -96,7 +99,39 @@ class WorkflowPanel(ABC):
         """Add subclass-specific inputs above the shared prompt box."""
 
     def render_images_tab_extra_controls(self) -> None:
-        """Add subclass-specific controls above the shared image gen sliders."""
+        """Create the model selection dropdowns shared by all panels."""
+        ps = self.app.project_state
+        with gr.Row():
+            self.image_model_dropdown = gr.Dropdown(
+                choices=[
+                    "grok-imagine-image-pro",
+                    "grok-imagine-image-quality",
+                    "grok-imagine-image-2.0",
+                    "grok-imagine-image",
+                ],
+                value=ps.image_model,
+                label="🎨 Production Model",
+                interactive=True,
+                allow_custom_value=True,
+            )
+            self.draft_model_dropdown = gr.Dropdown(
+                choices=[
+                    "grok-imagine-image",
+                    "grok-imagine-image-2.0",
+                    "grok-imagine-image-quality",
+                    "grok-imagine-image-pro",
+                ],
+                value=ps.draft_image_model,
+                label="🖼️ Draft Model",
+                interactive=True,
+                allow_custom_value=True,
+            )
+            self.draft_aspect_ratio_dropdown = gr.Dropdown(
+                choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+                value=ps.draft_aspect_ratio,
+                label="📐 Draft Aspect Ratio",
+                interactive=True,
+            )
 
     def get_prompt_tab_inputs(self) -> List:
         """Gradio components passed as inputs to do_generate_prompt."""
@@ -113,15 +148,27 @@ class WorkflowPanel(ABC):
 
     def get_ui_outputs(self) -> List:
         """Components list for project load/restore outputs — override in subclass."""
-        return [self.prompt_box, self.failed_gallery, self.output_gallery, self.review_chatbot]
+        return [
+            self.prompt_box,
+            self.failed_gallery,
+            self.output_gallery,
+            self.review_chatbot,
+            self.image_model_dropdown,
+            self.draft_model_dropdown,
+            self.draft_aspect_ratio_dropdown,
+        ]
 
     def get_ui_restore_values(self) -> List:
         """gr.update() values matching get_ui_outputs() — override in subclass."""
+        ps = self.app.project_state
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html([])),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
+            gr.update(value=ps.image_model),
+            gr.update(value=ps.draft_image_model),
+            gr.update(value=ps.draft_aspect_ratio),
         ]
 
     # ── image generation ─────────────────────────────────────────────────
@@ -453,7 +500,7 @@ class WorkflowPanel(ABC):
                 self.render_images_tab_extra_controls()
                 with gr.Row():
                     self._num_images_slider = gr.Slider(
-                        minimum=1, maximum=10, value=3, step=1, label="Number of Images"
+                        minimum=1, maximum=10, value=2, step=1, label="Number of Images"
                     )
                     self._aspect_ratio_dropdown = gr.Dropdown(
                         choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
@@ -505,6 +552,10 @@ class WorkflowPanel(ABC):
 
     def _wire_events(self) -> None:
         """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
+        self.image_model_dropdown.change(fn=self.app.update_image_model, inputs=[self.image_model_dropdown])
+        self.draft_model_dropdown.change(fn=self.app.update_draft_image_model, inputs=[self.draft_model_dropdown])
+        self.draft_aspect_ratio_dropdown.change(fn=self.app.update_draft_aspect_ratio, inputs=[self.draft_aspect_ratio_dropdown])
+
         self._gen_prompt_btn.click(
             fn=self.do_generate_prompt,
             inputs=self.get_prompt_tab_inputs(),

@@ -1,15 +1,10 @@
 """ElementWorkflowPanel: isolated FPV element generation for GIMP compositing."""
 
-import io
-import tempfile
-from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import gradio as gr
-from PIL import Image
 
 from .workflow_panel import WorkflowPanel
-from .gallery_widget import render_gallery_html
 
 
 class ElementWorkflowPanel(WorkflowPanel):
@@ -139,21 +134,9 @@ class ElementWorkflowPanel(WorkflowPanel):
         self.element_description = d.get("element_description", "")
         self.background_color = d.get("background_color", "Magenta")
 
-    def get_ui_outputs(self) -> List:
-        return [
-            self.prompt_box,
-            self.failed_gallery,
-            self.output_gallery,
-            self.review_chatbot,
-        ]
-
-    def get_ui_restore_values(self) -> List:
-        return [
-            gr.update(value=self.current_prompt),
-            gr.update(value=render_gallery_html([])),
-            gr.update(value=render_gallery_html(self.generated_images or [])),
-            gr.update(value=self.review_history),
-        ]
+    # get_ui_outputs() and get_ui_restore_values() inherited from WorkflowPanel —
+    # they include prompt_box, failed_gallery, output_gallery, review_chatbot,
+    # image_model_dropdown, draft_model_dropdown, draft_aspect_ratio_dropdown.
 
     def get_prompt_tab_inputs(self) -> List:
         return [self.element_reference, self.element_desc_box, self.element_bg_radio]

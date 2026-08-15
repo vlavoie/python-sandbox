@@ -58,7 +58,7 @@ class ProjectState:
 
         # App-level model preferences (persisted per project)
         self.chat_model = "grok-4.20"
-        self.image_model = "grok-imagine-image-2.0"
+        self.image_model = "grok-imagine-image-pro"
         self.draft_image_model = "grok-imagine-image"
         self.draft_aspect_ratio = "1:1"
 
@@ -213,7 +213,7 @@ class ProjectState:
 
             self.project_name = state.get("project_name", "untitled-project")
             self.chat_model = state.get("chat_model", "grok-4.20")
-            self.image_model = state.get("image_model", "grok-imagine-image-2.0")
+            self.image_model = state.get("image_model", "grok-imagine-image-pro")
             self.draft_image_model = state.get("draft_image_model", "grok-imagine-image")
             self.draft_aspect_ratio = state.get("draft_aspect_ratio", "1:1")
 

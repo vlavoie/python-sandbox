@@ -33,9 +33,6 @@ class FPVWorkflowPanel(WorkflowPanel):
         self.scene_desc = None
         self.additional_images = None
         self.greenzone_image = None
-        self.image_model_dropdown = None
-        self.draft_model_dropdown = None
-        self.draft_aspect_ratio_dropdown = None
 
     @property
     def panel_id(self) -> str:
@@ -361,63 +358,13 @@ Context:
                     image_mode=None,
                 )
 
-    def render_images_tab_extra_controls(self) -> None:
-        with gr.Row():
-            self.image_model_dropdown = gr.Dropdown(
-                choices=[
-                    "grok-imagine-image-2.0",
-                    "grok-imagine-image-quality",
-                    "grok-imagine-image-pro",
-                    "grok-imagine-image",
-                ],
-                value=self.app.project_state.image_model,
-                label="🎨 Production Model",
-                interactive=True,
-                allow_custom_value=True,
-            )
-            self.draft_model_dropdown = gr.Dropdown(
-                choices=[
-                    "grok-imagine-image",
-                    "grok-imagine-image-2.0",
-                    "grok-imagine-image-quality",
-                    "grok-imagine-image-pro",
-                ],
-                value=self.app.project_state.draft_image_model,
-                label="🖼️ Draft Model",
-                interactive=True,
-                allow_custom_value=True,
-            )
-            self.draft_aspect_ratio_dropdown = gr.Dropdown(
-                choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
-                value=self.app.project_state.draft_aspect_ratio,
-                label="📐 Draft Aspect Ratio",
-                interactive=True,
-            )
-
     def _wire_events(self) -> None:
         super()._wire_events()
 
         # Pre-save uploaded files immediately on change (so Save Now works before Generate Prompt)
-        self.reference_image.change(
-            fn=self._on_reference_change, inputs=[self.reference_image]
-        )
-        self.additional_images.change(
-            fn=self._on_additional_change, inputs=[self.additional_images]
-        )
-        self.greenzone_image.change(
-            fn=self._on_greenzone_change, inputs=[self.greenzone_image]
-        )
-
-        # Model dropdowns update app-level project state
-        self.image_model_dropdown.change(
-            fn=self.app.update_image_model, inputs=[self.image_model_dropdown]
-        )
-        self.draft_model_dropdown.change(
-            fn=self.app.update_draft_image_model, inputs=[self.draft_model_dropdown]
-        )
-        self.draft_aspect_ratio_dropdown.change(
-            fn=self.app.update_draft_aspect_ratio, inputs=[self.draft_aspect_ratio_dropdown]
-        )
+        self.reference_image.change(fn=self._on_reference_change, inputs=[self.reference_image])
+        self.additional_images.change(fn=self._on_additional_change, inputs=[self.additional_images])
+        self.greenzone_image.change(fn=self._on_greenzone_change, inputs=[self.greenzone_image])
 
     def _on_reference_change(self, ref_image) -> None:
         if ref_image:

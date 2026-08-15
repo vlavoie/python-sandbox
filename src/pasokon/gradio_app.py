@@ -113,11 +113,12 @@ class FPVPOVApp:
     # ── UI wrappers for project load/set ──────────────────────────────────
 
     def _build_project_outputs(self, status: str, display: str) -> tuple:
-        """Combine app-level + FPV panel + chat model values into OUTPUTS_PROJECT tuple."""
+        """Combine app-level + all panel restore values into OUTPUTS_PROJECT tuple."""
         return (
             status,
             display,
             *self.fpv_panel.get_ui_restore_values(),
+            *self.element_panel.get_ui_restore_values(),
             gr.update(value=self.project_state.chat_model),
         )
 
@@ -212,12 +213,12 @@ class FPVPOVApp:
                     gr.Markdown("### Generate isolated FPV elements for GIMP compositing")
                     self.element_panel.render()
 
-            # OUTPUTS_PROJECT maps to what _build_project_outputs returns:
-            # (status, display, *fpv_panel.get_ui_outputs(), chat_model_dropdown)
+            # OUTPUTS_PROJECT must match what _build_project_outputs returns exactly.
             OUTPUTS_PROJECT = [
                 project_mgmt_status,
                 current_project_display,
                 *self.fpv_panel.get_ui_outputs(),
+                *self.element_panel.get_ui_outputs(),
                 chat_model_dropdown,
             ]
 
@@ -268,7 +269,7 @@ def launch():
     if existing_key:
         print("🔑 Auto-initializing with API key from environment...")
         app.initialize_client(existing_key)
-        app.client.image_model = "grok-imagine-image-2.0"
+        app.client.image_model = "grok-imagine-image-pro"
         chat_models, image_models = app.fetch_models()
         if chat_models and image_models:
             print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
