@@ -45,16 +45,28 @@ Typical values: bangs 15–20% of frame height, side panels 12–18% wide.
 
 ---
 
+**Why the center is empty — always include this context for hair elements:**
+
+Aurora generates hair as a full wig by default. To get border-only hair, it must understand *why* the center is empty: the camera is physically positioned inside the character's head, looking outward. The hair is only visible at the frame edges because those are the literal edges of the hairline as seen from within. The center of the frame is the open view the camera is looking through, not a cutout.
+
+Include this spatial reasoning in every hair element prompt: "camera positioned just behind the eyes within the hairline — only the peripheral hair at the frame borders is naturally visible; the center represents the open forward view filled with [background]."
+
+Without this context, Aurora treats "background fills the center" as a color choice and still places the full hair object somewhere in the frame.
+
+---
+
 **Flowing / long hair with tails or loose strands (complex hairstyles):**
 Use this template when the hair has long trailing sections, side tails, ribbon ties, or a headdress — any style that doesn't have clean straight side edges.
 
-The fringe/bangs follow the same rule as a bob (upper X% of frame). Long strands and tails enter from the upper corners and trail downward along the frame borders — they are border details, not centered objects. A headdress or hair accessory visible at the very top center edge anchors the top of the frame.
+The fringe/bangs follow the same rule as a bob (upper X% of frame). Long strands and tails follow the frame borders downward — they are border details, not centered objects. A headdress or hair accessory appears at the very top center edge.
 
-> "[Bangs/fringe description] occupying the upper [X]% of the frame. Long flowing [hair description] enters from the upper-left and upper-right corners, trailing downward along the left and right frame borders as [X]%-wide strips of loose strands, thinning toward the bottom. [Headdress/accessory] visible at the top center edge. [Background] fills the center and lower frame. Hair color, strand texture, ribbons, and accessories exactly matching IMAGE_0. Only the hair and accessories on [background]."
+> "[Bangs/fringe description] occupying the upper [X]% of the frame, camera positioned just behind the eyes within the hairline — only the peripheral hair at the frame borders is naturally visible from this first-person interior viewpoint. Long flowing [hair description] lines the left frame border as a [X]%-wide strip of loose strands from the upper-left corner downward, and the right frame border as a [X]%-wide strip from the upper-right corner downward, thinning toward the bottom. [Headdress/accessory] appears at the top center edge of the upper border. [Background] fills the entire center and lower frame representing the open forward view. Hair color, strand texture, ribbons, and accessories exactly matching IMAGE_0. Only hair and accessories visible; [background] everywhere else."
 
-Typical values: bangs 15–20%, entering side strands 8–14% wide at the top narrowing to 4–6% at mid-frame.
+Typical values: bangs 15–20%, side border strips 8–14% wide at top narrowing to 4–6% at mid-frame.
 
 If the hair is asymmetric (head turned), state different widths per side explicitly.
+
+**If the full hair object keeps appearing despite the above:** split into two separate element generations — one for the top fringe only (upper border, no sides) and one for the side strands only (left and right borders, no top). Simpler per-region elements are easier for Aurora to isolate than a combined border description.
 
 ---
 
@@ -103,7 +115,8 @@ State on first line: `Background choice: White` or `Background choice: Chroma Gr
 When reviewing a generated element, check in this order:
 
 1. **Element is centered / floating (primary failure):** The element appears as a standalone object in the middle of the frame rather than occupying the frame borders. This is the most common failure and must be fixed before anything else.
-   - Fix: Rewrite the prompt with explicit frame-border positions. State exactly which frame edges the element occupies and at what percentage widths. "Upper [X]% and [X]%-wide strips along the left and right frame borders" — not "centered", not "isolated on background."
+   - Fix: Rewrite with explicit frame-border positions AND the interior-viewpoint spatial reasoning. "Camera positioned just behind the eyes within the hairline — only the peripheral hair at the frame borders is naturally visible; the center represents the open forward view." The border positions alone are not enough — Aurora needs to understand *why* the center is empty or it will keep placing the full object there.
+   - If the centered object reappears after one rewrite with the full context: split the element into two separate generations (top fringe only; side strips only). Each single-region prompt is much harder to misinterpret as a full-object scene.
 
 2. **Side panels are scene objects instead of hair/element strips:** The side areas of the frame contain curtains, fabric, or other objects rather than the character's hair or body element. This happens when "entering from the sides" language is interpreted as objects walking into the scene.
    - Fix: Use the frame-border framing from the critical constraint section. Describe the hair/element as a static border detail, not as something entering or appearing. "The left and right frame borders are lined with [X]%-wide strips of [element]" rather than "[element] enters from the sides."
@@ -113,6 +126,34 @@ When reviewing a generated element, check in this order:
 
 4. **Color / style doesn't match IMAGE_0:** Element has wrong color or art style.
    - Fix: Add "Color, texture, and style exactly matching IMAGE_0" and verify IMAGE_0 is included in the generation.
+
+---
+
+---
+
+## Phase 2 mode — blank canvas with green zone template
+
+When an Element Base Template is provided (IMAGE_1), the workflow switches to Phase 2 fill mode.
+
+**Why this works:** A blank canvas with green strips painted exactly at the frame-border positions sidesteps Aurora's "hair = full centered wig" prior entirely. The model sees a spatial map of exactly where the element belongs. There is no ambiguity about the center being empty — the template makes it structurally explicit.
+
+**IMAGE assignment in Phase 2 mode:**
+- **IMAGE_0** = character reference (style, color, appearance anchor)
+- **IMAGE_1** = blank canvas with chroma green zones marking where the element should appear
+
+**Prompt structure for Phase 2 element fill:**
+
+> "Starting from IMAGE_1 as the spatial template, fill the green zones with [element description] matching IMAGE_0. Green zones mark exactly where the element should appear. [Element description: color, texture, style]. Background outside the green zones remains [White / Chroma Green]. Green paint fully replaced by the element. Color and style exactly matching IMAGE_0."
+
+**Key differences from Phase 2 FPV review:**
+- The base is a blank canvas, not a scene — do NOT use "unchanged spatial and compositional base" language
+- There is no scene to preserve outside the green zones, only background color
+- Still requires explicit "green paint fully replaced" — Aurora does not auto-remove template markers
+
+**When to use Phase 2 element mode:**
+- Hair elements that keep generating as centered wigs despite Phase 1 rewrites
+- Any element where Aurora consistently misreads the center-empty constraint
+- Complex asymmetric or flowing hair where split-generation is impractical
 
 ---
 

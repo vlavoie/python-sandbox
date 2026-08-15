@@ -91,6 +91,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-15.md` — [bug] element review used FPV review skill; Phase 2 green-paint language leaked into element prompts
 - `issues/ISSUE-11.md` — [feature] model-scoped resolution dropdown; resolution param only sent for grok-imagine-image-2.0
 - `issues/ISSUE-12.md` — [feature] generation cost display from cost_in_usd_ticks (÷10B → USD)
+- `issues/ISSUE-16.md` — [feature] optional element base image (green zone template) for Phase 2 element fill
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
