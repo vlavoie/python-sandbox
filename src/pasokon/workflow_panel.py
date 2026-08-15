@@ -583,6 +583,9 @@ class WorkflowPanel(ABC):
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
+            # Show the user's message immediately before the API call.
+            yield prior_history + [{"role": "user", "content": msg}], "", prior_gallery
+
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
             # the existing conversation without wiping history.
@@ -590,7 +593,8 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    return prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
+                    yield prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
+                    return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
                 self.review_context = ctx
@@ -599,12 +603,13 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    return prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
+                    yield prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
+                    return
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            return result[0], "", gallery_html
+            yield result[0], "", gallery_html
 
         self._send_btn.click(
             fn=send_message,

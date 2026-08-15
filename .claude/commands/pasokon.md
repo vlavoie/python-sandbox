@@ -87,6 +87,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-9.md` — review chatbot cleared on every image generation (gr.update(value=[]) in _generate_images_for_ui)
 - `issues/ISSUE-10.md` — [bug] start_review called on first post-restart message, wiping history (review_context empty ≠ fresh start)
 - `issues/ISSUE-13.md` — [bug] prompt_box was in Generate Prompt tab; moved to top of Generate Images tab
+- `issues/ISSUE-14.md` — [feature] send_message is a generator; yields user message immediately, then API response
 - `issues/ISSUE-11.md` — [feature] model-scoped resolution dropdown; resolution param only sent for grok-imagine-image-2.0
 - `issues/ISSUE-12.md` — [feature] generation cost display from cost_in_usd_ticks (÷10B → USD)
 
