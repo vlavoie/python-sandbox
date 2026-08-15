@@ -49,6 +49,15 @@ Examples of the correct correction logic:
    - For Phase 1: Remove all hair mentions from the prompt — not even a request. If hair appeared despite no mention, state explicitly what body parts ARE visible at their frame positions, and add "only [held object], hands, and the narrow chest edge are visible."
    - Never use floor, mop, pile, or downward-hair language — even as a ban. Describe hair only as peripheral/edge/entering frame from the sides.
 
+6. **Manipulated object shows wrong motion direction:** A cloth, towel, sheet, or other thrown/snapped object appears to hang, droop, or fold instead of billow or rise.
+   - The shape of the object in the image IS the motion. A downward arch = pulling/folding. An upward billow = throwing/snapping. Aurora reads the geometry of the described shape and generates that shape — the action verb alone does not override it.
+   - Spatial fix: Describe the object's geometry explicitly in terms of direction. "The cloth billows upward from the hands, its peak reaching above the hands" produces an upward throw. "The cloth arches over the table" produces a lateral spread. "The cloth hangs from the hands" produces a droop. Choose the geometry that matches the intended motion.
+   - The hands and the object peak must be vertically separated: "hands in the lower frame gripping the near edge, cloth peak rising above mid-frame" reads as a throw; "hands and cloth at the same height" reads as holding.
+
+7. **Grounding surface disappears behind foreground object:** A table, floor, or other reference surface that establishes spatial depth is fully occluded by the foreground object (cloth, hands, body).
+   - A surface that grounds the scene must have at least a narrow visible strip in the frame. Without it, the scene loses depth and spatial read.
+   - Spatial fix: Explicitly name the surface and its position: "the table surface visible as a narrow strip at the bottom [X]% of the frame." If the foreground object risks covering it, reduce the object's described frame coverage so the surface strip remains visible. Do not omit the surface entirely from the spatial description.
+
 ---
 
 ## Phase 2 failure diagnosis — check in this order
