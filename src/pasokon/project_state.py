@@ -190,9 +190,6 @@ class ProjectState:
         Load project state from disk. Restores app-level fields and all registered panels.
         Returns (status_msg, project_display_str).
         """
-        # Reset panels to blank before loading
-        self._clear_all_panels()
-
         try:
             if not project_name:
                 last = self.output_dir / ".last_project.txt"
@@ -203,10 +200,17 @@ class ProjectState:
 
             metadata_path = self._get_project_metadata_path(project_name)
             if not metadata_path.exists():
+                # No state file — switch to this project name with a blank slate
+                self.project_name = project_name
+                self._clear_all_panels()
+                (self.output_dir / project_name).mkdir(parents=True, exist_ok=True)
                 return (
-                    f"ℹ️ No saved state found for project '{project_name}'",
+                    f"ℹ️ No saved state for '{project_name}' — starting fresh",
                     self._get_project_display_string(),
                 )
+
+            # State file confirmed to exist — safe to clear and reload
+            self._clear_all_panels()
 
             with open(metadata_path, "r", encoding="utf-8") as f:
                 state = json.load(f)

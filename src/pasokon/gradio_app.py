@@ -123,12 +123,20 @@ class FPVPOVApp:
         )
 
     def _load_project_for_ui(self, project_name=None) -> tuple:
-        status, display = self.project_state.load_project_state(project_name)
-        return self._build_project_outputs(status, display)
+        try:
+            status, display = self.project_state.load_project_state(project_name)
+            return self._build_project_outputs(status, display)
+        except Exception as e:
+            print(f"\nERROR IN PROJECT LOAD:\n{e}\n")
+            return self._build_project_outputs(f"❌ Failed to load project: {e}", "")
 
     def _set_project_for_ui(self, project_name: str) -> tuple:
-        status, display = self.project_state.set_project_name(project_name)
-        return self._build_project_outputs(status, display)
+        try:
+            status, display = self.project_state.set_project_name(project_name)
+            return self._build_project_outputs(status, display)
+        except Exception as e:
+            print(f"\nERROR IN SET PROJECT:\n{e}\n")
+            return self._build_project_outputs(f"❌ Failed to set project: {e}", "")
 
     # ── Gradio interface ──────────────────────────────────────────────────
 
