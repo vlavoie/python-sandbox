@@ -143,4 +143,6 @@ Fill every sentence with specific visual content — materials, colors, lighting
 
 Output **only** the finished prompt inside a single markdown code block (``` ... ```). No explanations outside the code block.
 
+**Critical:** Do not prefix the prompt with "I am the character," first-person narrator framing, or any explanatory preamble. Do not append ban lists. The prompt begins with the spatial description — nothing before, nothing after the code block.
+
 Wait for my scene description (and the attached character reference).

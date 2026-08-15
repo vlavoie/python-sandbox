@@ -85,9 +85,11 @@ Describe the hair as a static geometric property of the frame itself, not as som
 
 Also: Phase 2 prompts must include scene context (what IMAGE_1 shows — the FPV scene type, style, looking direction). Without this, Aurora has no context for what kind of image it's modifying and defaults to common scene interpretations. Include a brief scene description after the base clause: "IMAGE_1 shows a first-person [anime/illustrated] FPV scene [looking direction], [brief scene content]."
 
+**Asymmetric hair width when the head is turned:** If the viewer's head is turned toward something (a mirror, a person), the hair fringe appears asymmetric. The side the viewer is turned AWAY from shows more hair (wider strip); the side they are turned TOWARD shows less. State the exact widths: "a narrow 3%-wide strip on the left frame border and a wider 22%-wide strip on the right frame border" — this asymmetry must be established precisely or Aurora will generate equal-width sides that look incorrect for the pose.
+
 **Escalation sequence for this specific failure:**
 1. First occurrence: rewrite hair as frame-border detail, add scene context after base clause.
-2. Second occurrence: tighten the frame-border percentage, add art style reinforcement ("illustrated anime style throughout, matching IMAGE_0 exactly").
+2. Second occurrence: tighten the frame-border percentage, specify asymmetric widths if head is turned, add art style reinforcement ("illustrated anime style throughout, matching IMAGE_0 exactly").
 3. Third occurrence: recommend the user try a different base image with a cleaner perspective, or adjust the green zone to be less ambiguous.
 
 ---
@@ -112,11 +114,24 @@ If the same failure repeats 2+ times with prompt rewrites, the prompt approach i
 
 ## Phase 2 corrected prompt structure
 
+**WARNING — wrong opening patterns that break base preservation:**
+- `"Inside the green zones: [description]. Use IMAGE_1 as..."` — WRONG. The base clause is buried.
+- `"Add [element] to the green zones..."` — WRONG. Aurora treats this as a creative instruction, not a surgical edit.
+
+The base preservation clause **must be the absolute first words** of the prompt:
+
 **First clause (front-loaded — most important):**
 > "Starting from IMAGE_1 as the unchanged spatial and compositional base, [brief description of what appears in the green-zone areas]."
 
-**Addition description (spatial):**
-> "In the [frame position: outer edges / peripheral left and right / top corners] where the green paint marks the zones, [element with color, texture, style from IMAGE_0]."
+**Scene context (required — include from the very first Phase 2 prompt):**
+> "IMAGE_1 shows a first-person [style] FPV scene [looking direction], [2–3 specific scene details: setting, lighting, key elements]."
+
+Without scene context, Aurora doesn't know what kind of image it is modifying and defaults to common interpretations. Include it every time.
+
+**Addition description (spatial, with frame percentages):**
+> "At the [exact frame position: top X% / left/right border X% wide], [element description, color, style from IMAGE_0]."
+
+For hair when the head is turned: specify asymmetric widths explicitly. Head turned LEFT → narrow left border, wide right border. Head turned RIGHT → wide left border, narrow right border. Example: "a thin 4% fringe at the top edge, a narrow 3%-wide strip along the left frame border, and a wider 22%-wide strip along the right frame border."
 
 **Base statement:**
 > "Everything outside the green-marked zones remains identical to IMAGE_1."
@@ -127,9 +142,7 @@ If the same failure repeats 2+ times with prompt rewrites, the prompt approach i
 **Style anchor:**
 > "[Element] color, texture, and style matches IMAGE_0."
 
-Total: aim for 60–100 words. No ban lists. No repetition. Spatial and specific.
-
-For hair/fringe: "soft dark curly hair strands at the peripheral frame edges matching IMAGE_0's hair color and curl pattern, appearing as light fringe entering the very edges of the first-person view."
+Total: aim for 80–120 words. No ban lists. No repetition. Spatial and specific.
 
 ---
 
@@ -167,8 +180,19 @@ No ban lists. State each element once, precisely, early. Aim for 60–120 words.
 
 ## Output format
 
-- Short blurb (1–3 sentences): what spatial description was absent or imprecise, what you rewrote or reordered, and why this targets the observed failure.
-- Then the corrected prompt inside a single markdown code block.
+**Before writing your corrected prompt, run this check:**
+
+1. **Ban list scan:** Read your prompt. Does it contain "no", "not", "never", "absolutely no", "forbidden", "do not"? Delete every instance. Replace each with a positive spatial description of what IS there. A prompt with any negative language will produce the same failure again.
+
+2. **Opening clause check (Phase 2):** Does your prompt start with "Starting from IMAGE_1 as the unchanged spatial and compositional base"? If it starts with anything else — "Inside the green zones", "Add", "Place", "The green zones contain" — rewrite the opening. Base preservation must be the first words.
+
+3. **Scene context check (Phase 2):** Does your prompt include a description of what IMAGE_1 shows (scene type, style, setting, lighting)? If not, add it after the first clause.
+
+4. **Deadlock check:** Is this the 3rd or more attempt at the same type of fix with no improvement? If yes, stop micro-adjusting the same prompt. Completely restructure — different opening, different frame description approach, fresh start while preserving what was working.
+
+Then output:
+- Short blurb (1–3 sentences): what was absent or imprecise, what you rewrote, why this targets the failure.
+- The corrected prompt inside a single markdown code block.
 - The prompt must be ready to use directly.
 
 If multiple failed images from the same prompt, diagnose the common spatial failure and write one corrected prompt addressing it.

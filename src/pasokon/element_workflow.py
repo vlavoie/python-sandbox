@@ -38,8 +38,12 @@ class ElementWorkflowPanel(WorkflowPanel):
     def get_output_subdir(self) -> str:
         return "element-outputs"
 
+    def _effective_reference(self) -> Optional[str]:
+        """Element-specific reference, falling back to FPV panel's reference."""
+        return self.element_reference_path or self.app.fpv_panel.reference_image_path
+
     def get_reference_image_path(self) -> Optional[str]:
-        return self.element_reference_path
+        return self._effective_reference()
 
     def get_additional_images_for_generation(self) -> Optional[List[str]]:
         return None
@@ -52,7 +56,7 @@ class ElementWorkflowPanel(WorkflowPanel):
             "failed_images": images_to_review,
             "original_prompt": self.current_prompt,
             "scene_description": f"FPV element: {self.element_description}\nBackground: {self.background_color}",
-            "reference_image": self.element_reference_path,
+            "reference_image": self._effective_reference(),
             "additional_images": None,
             "review_mode": "phase1",
             "mode_info": "",
@@ -73,7 +77,9 @@ class ElementWorkflowPanel(WorkflowPanel):
         client = self.app.client
         ps = self.app.project_state
 
-        if not client or not reference_image or not element_description.strip():
+        # Allow empty element reference — fall back to FPV panel's reference
+        effective_ref = reference_image or self.app.fpv_panel.reference_image_path
+        if not client or not effective_ref or not element_description.strip():
             yield gr.update(), gr.update(), gr.update(value=[]), _btn_reset
             return
 
@@ -84,8 +90,9 @@ class ElementWorkflowPanel(WorkflowPanel):
         yield gr.update(), gr.update(), gr.update(value=[]), _btn_loading
 
         try:
-            progress(0, desc="Saving reference...")
-            self.element_reference_path = ps.save_uploaded_file(reference_image)
+            if reference_image:
+                progress(0, desc="Saving reference...")
+                self.element_reference_path = ps.save_uploaded_file(reference_image)
             self.element_description = element_description
             self.background_color = background_color
 
@@ -107,7 +114,7 @@ class ElementWorkflowPanel(WorkflowPanel):
 
             progress(0.5, desc="Waiting for Grok API (~30s)...")
             self.current_prompt = client.generate_prompt(
-                reference_image=self.element_reference_path,
+                reference_image=self._effective_reference(),
                 scene_description=element_scene,
                 skill_content=ps.element_skill,
             )
@@ -140,9 +147,19 @@ class ElementWorkflowPanel(WorkflowPanel):
         self.element_description = d.get("element_description", "")
         self.background_color = d.get("background_color", "Auto")
 
-    # get_ui_outputs() and get_ui_restore_values() inherited from WorkflowPanel —
-    # they include prompt_box, failed_gallery, output_gallery, review_chatbot,
-    # image_model_dropdown, draft_model_dropdown, draft_aspect_ratio_dropdown.
+    def get_ui_outputs(self) -> List:
+        return super().get_ui_outputs() + [
+            self.element_reference,
+            self.element_desc_box,
+            self.element_bg_radio,
+        ]
+
+    def get_ui_restore_values(self) -> List:
+        return super().get_ui_restore_values() + [
+            gr.update(value=self.element_reference_path),
+            gr.update(value=self.element_description),
+            gr.update(value=self.background_color),
+        ]
 
     def get_prompt_tab_inputs(self) -> List:
         return [self.element_reference, self.element_desc_box, self.element_bg_radio]
@@ -156,7 +173,7 @@ class ElementWorkflowPanel(WorkflowPanel):
         )
         with gr.Row():
             self.element_reference = gr.Image(
-                label="Character Reference (IMAGE_0)",
+                label="Character Reference (optional — uses FPV reference if empty)",
                 type="filepath",
                 sources=["upload"],
                 height=220,
