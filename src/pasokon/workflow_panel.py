@@ -279,19 +279,14 @@ class WorkflowPanel(ABC):
 
             if not images:
                 progress(1.0, desc="No images returned")
-                return render_gallery_html(self.generated_images), gr.update(), gr.update(), gr.update()
+                return render_gallery_html(self.generated_images), gr.update()
 
             progress(1.0, desc="Done")
-            return (
-                render_gallery_html(images),
-                render_gallery_html(images),
-                gr.update(value=[]),
-                gr.update(value=self._work_item_status()),
-            )
+            return render_gallery_html(images), render_gallery_html(images)
 
         except Exception:
             progress(1.0, desc="Failed")
-            return render_gallery_html(self.generated_images), gr.update(), gr.update(), gr.update()
+            return render_gallery_html(self.generated_images), gr.update()
 
     # ── review ────────────────────────────────────────────────────────────
 
@@ -577,7 +572,10 @@ class WorkflowPanel(ABC):
                 self._num_images_slider,
                 self._aspect_ratio_dropdown,
             ],
-            outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot, self._work_item_label],
+            outputs=[self.output_gallery, self.failed_gallery],
+        ).then(
+            fn=lambda: gr.update(value=self._work_item_status()),
+            outputs=[self._work_item_label],
         )
 
         def send_message(msg, uploaded):

@@ -62,6 +62,12 @@ The save must happen AFTER all state mutations — never before.
 - `cost_in_usd_ticks` in response `usage`: divide by 10,000,000,000 for USD
 - Images referenced in prompts as `<IMAGE_0>`, `<IMAGE_1>`, etc.
 
+## Bug workflow
+When you identify and fix a bug:
+1. Create `issues/ISSUE-N.md` (next number in sequence) with sections: root cause, fix, key invariant.
+2. Add a one-line entry to the **Known issues log** below.
+3. Add the same entry to `CLAUDE.md` if it introduces a new non-obvious invariant.
+
 ## Known issues log
 Before making changes to review flow, project loading, or image persistence, read:
 - `issues/ISSUE-1.md` — temp paths in generated_images vanish after restart
@@ -72,6 +78,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-6.md` — project selector dropdown collapse bug
 - `issues/ISSUE-7.md` — gr.Image without image_mode=None strips PNG alpha
 - `issues/ISSUE-8.md` — start_review failure silently wiped chatbot and gallery
+- `issues/ISSUE-9.md` — review chatbot cleared on every image generation (gr.update(value=[]) in _generate_images_for_ui)
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
