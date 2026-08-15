@@ -165,7 +165,10 @@ class WorkflowPanel(ABC):
         """gr.update() values matching get_ui_outputs() — override in subclass."""
         ps = self.app.project_state
         is_aurora = ps.image_model == "grok-imagine-image-2.0"
-        review_images = self.review_context.get("failed_images", []) if self.review_context else []
+        review_images = (
+            self.review_context.get("failed_images") or self.generated_images
+            if self.review_context else self.generated_images or []
+        )
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html(review_images)),
@@ -241,6 +244,8 @@ class WorkflowPanel(ABC):
             self.iteration_count += 1
             self.generated_images = images
             self.current_prompt = prompt
+            if self.review_context:
+                self.review_context["failed_images"] = images
 
             ps = self.app.project_state
             is_partial = len(images) < num_images
@@ -279,14 +284,11 @@ class WorkflowPanel(ABC):
                 progress(1.0, desc="No images returned")
                 return render_gallery_html(self.generated_images), gr.update(), gr.update(), gr.update()
 
-            if self.review_context:
-                self.review_context["failed_images"] = images
-
             progress(1.0, desc="Done")
             return (
                 render_gallery_html(images),
-                render_gallery_html([]),
-                gr.update(),
+                render_gallery_html(images),
+                gr.update(value=[]),
                 gr.update(value=self._work_item_status()),
             )
 
@@ -354,12 +356,12 @@ class WorkflowPanel(ABC):
         except Exception as e:
             return [], f"❌ Error during review: {str(e)}", []
 
-    def continue_review(self, user_message: str, history: List) -> Tuple[List, str]:
+    def continue_review(self, user_message: str) -> Tuple[List, str]:
         client = self.app.client
         if not client:
-            return history, "❌ Client not initialized"
+            return self.review_history, "❌ Client not initialized"
         if not user_message.strip():
-            return history, ""
+            return self.review_history, ""
 
         try:
             messages = [{"role": "system", "content": self.get_review_skill()}]
@@ -408,7 +410,7 @@ class WorkflowPanel(ABC):
                 messages.append({"role": "user", "content": content})
 
             skip_first_user = True
-            for msg in history:
+            for msg in self.review_history:
                 if skip_first_user and msg["role"] == "user":
                     skip_first_user = False
                     continue
@@ -438,7 +440,7 @@ class WorkflowPanel(ABC):
                 if not ar:
                     raise Exception("Warning: No response returned")
 
-            new_history = history + [
+            new_history = self.review_history + [
                 {"role": "user", "content": user_message},
                 {"role": "assistant", "content": ar},
             ]
@@ -447,12 +449,10 @@ class WorkflowPanel(ABC):
             return new_history, ""
 
         except Exception as e:
-            return history, f"❌ Error: {str(e)}"
+            return self.review_history, f"❌ Error: {str(e)}"
 
-    def extract_prompt(self, history: List) -> Tuple[str, Any]:
-        if not history:
-            return "", gr.update()
-        for msg in reversed(history):
+    def extract_prompt(self) -> Tuple[str, Any]:
+        for msg in reversed(self.review_history):
             if msg["role"] == "assistant" and msg["content"]:
                 cleaned = GrokClient._clean_prompt_text(msg["content"])
                 if cleaned:
@@ -580,28 +580,28 @@ class WorkflowPanel(ABC):
             outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot, self._work_item_label],
         )
 
-        def send_message(msg, history, uploaded):
+        def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
-            if not history or not self.review_context:
+            if not self.review_history or not self.review_context:
                 result = self.start_review(msg, uploaded)
                 gallery_html = render_gallery_html(result[2])
             else:
-                result = self.continue_review(msg, history)
+                result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
             return result[0], "", gallery_html
 
         self._send_btn.click(
             fn=send_message,
-            inputs=[self.review_input, self.review_chatbot, self._failed_upload],
+            inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
         )
         self.review_input.submit(
             fn=send_message,
-            inputs=[self.review_input, self.review_chatbot, self._failed_upload],
+            inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
         )
         self._extract_btn.click(
             fn=self.extract_prompt,
-            inputs=[self.review_chatbot],
+            inputs=[],
             outputs=[self.prompt_box, self.panel_tabs],
         )

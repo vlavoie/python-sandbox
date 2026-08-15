@@ -317,7 +317,10 @@ Context:
         ref = self.reference_image_path if self.reference_image_path else None
         gz = self.greenzone_image_path if self.greenzone_image_path else None
         additional = self.additional_images_paths or []
-        review_images = self.review_context.get("failed_images", []) if self.review_context else []
+        review_images = (
+            self.review_context.get("failed_images") or self.generated_images
+            if self.review_context else self.generated_images or []
+        )
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html(review_images)),
