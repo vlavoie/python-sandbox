@@ -66,6 +66,12 @@ class WorkflowPanel(ABC):
         self.draft_model_dropdown = None
         self.image_resolution_dropdown = None
         self._work_item_label = None
+        self._dup_confirm_row = None
+        self._gen_anyway_btn = None
+        self._dup_cancel_btn = None
+
+        # Session-only (not persisted) — tracks last prompt sent to the API
+        self._last_submitted_prompt: str = ""
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -264,6 +270,28 @@ class WorkflowPanel(ABC):
     def _generate_images_for_ui(
         self, prompt, num_images, aspect_ratio, progress=gr.Progress()
     ):
+        if (
+            prompt
+            and prompt.strip()
+            and prompt.strip() == self._last_submitted_prompt.strip()
+        ):
+            return (
+                render_gallery_html(self.generated_images),
+                gr.update(),
+                gr.update(visible=True),
+            )
+        self._last_submitted_prompt = (prompt or "").strip()
+        gallery, failed = self._do_generate(prompt, num_images, aspect_ratio, progress)
+        return gallery, failed, gr.update(visible=False)
+
+    def _force_generate_images_for_ui(
+        self, prompt, num_images, aspect_ratio, progress=gr.Progress()
+    ):
+        self._last_submitted_prompt = (prompt or "").strip()
+        gallery, failed = self._do_generate(prompt, num_images, aspect_ratio, progress)
+        return gallery, failed, gr.update(visible=False)
+
+    def _do_generate(self, prompt, num_images, aspect_ratio, progress):
         try:
             def on_done(c, t):
                 progress(c / t, desc=f"Image {c}/{t} done...")
@@ -272,10 +300,10 @@ class WorkflowPanel(ABC):
             r = ps.image_resolution if ps.image_resolution != "auto" else None
             progress(0, desc=f"Generating {num_images} image(s)...")
             _, images, _ = self.generate_images_batch(
-                    prompt, num_images, aspect_ratio,
-                    resolution_override=r,
-                    progress_callback=on_done
-                )
+                prompt, num_images, aspect_ratio,
+                resolution_override=r,
+                progress_callback=on_done,
+            )
 
             if not images:
                 progress(1.0, desc="No images returned")
@@ -508,6 +536,10 @@ class WorkflowPanel(ABC):
                         label="Aspect Ratio",
                     )
                 self._gen_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
+                with gr.Row(visible=False) as self._dup_confirm_row:
+                    gr.Markdown("⚠️ Same prompt as last generation.")
+                    self._gen_anyway_btn = gr.Button("Generate anyway", variant="secondary", size="sm")
+                    self._dup_cancel_btn = gr.Button("Cancel", size="sm")
                 self._work_item_label = gr.Markdown(value=self._work_item_status())
                 self.output_gallery = gr.HTML()
 
@@ -565,27 +597,43 @@ class WorkflowPanel(ABC):
             outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
         )
 
+        _gen_inputs = [self.prompt_box, self._num_images_slider, self._aspect_ratio_dropdown]
+        _gen_outputs = [self.output_gallery, self.failed_gallery, self._dup_confirm_row]
+
         self._gen_images_btn.click(
             fn=self._generate_images_for_ui,
-            inputs=[
-                self.prompt_box,
-                self._num_images_slider,
-                self._aspect_ratio_dropdown,
-            ],
-            outputs=[self.output_gallery, self.failed_gallery],
+            inputs=_gen_inputs,
+            outputs=_gen_outputs,
         ).then(
             fn=lambda: gr.update(value=self._work_item_status()),
             outputs=[self._work_item_label],
         )
+        self._gen_anyway_btn.click(
+            fn=self._force_generate_images_for_ui,
+            inputs=_gen_inputs,
+            outputs=_gen_outputs,
+        ).then(
+            fn=lambda: gr.update(value=self._work_item_status()),
+            outputs=[self._work_item_label],
+        )
+        self._dup_cancel_btn.click(
+            fn=lambda: gr.update(visible=False),
+            outputs=[self._dup_confirm_row],
+        )
+
+        _input_locked = gr.update(interactive=False)
+        _input_unlocked = gr.update(interactive=True)
+        _btn_locked = gr.update(interactive=False)
+        _btn_unlocked = gr.update(interactive=True)
 
         def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
-            # Show user message + thinking placeholder immediately; replaced by real response below.
+            # Show user message + thinking placeholder; lock input while waiting.
             pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
-            yield pending, "", prior_gallery
+            yield pending, "", prior_gallery, _input_locked, _btn_locked
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -594,7 +642,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _input_unlocked, _btn_unlocked
                     return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
@@ -604,23 +652,23 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _input_unlocked, _btn_unlocked
                     return
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            yield result[0], "", gallery_html
+            yield result[0], "", gallery_html, _input_unlocked, _btn_unlocked
 
         self._send_btn.click(
             fn=send_message,
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self.review_input, self._send_btn],
         )
         self.review_input.submit(
             fn=send_message,
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self.review_input, self._send_btn],
         )
         self._extract_btn.click(
             fn=self.extract_prompt,

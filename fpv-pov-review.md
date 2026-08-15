@@ -121,6 +121,22 @@ If the same failure repeats 2+ times with prompt rewrites, the prompt approach i
 
 ---
 
+## Phase 2 minimalism — when the Phase 1 base is strong
+
+When Phase 1 produced a solid base and Phase 2 is adding only a small overlay (hair strips, color blending), keep the Phase 2 prompt minimal. Describing the full scene in detail gives Aurora latitude to reinterpret the composition. The more description you add, the more the model treats it as a creative brief rather than a surgical edit.
+
+**Signs the Phase 2 prompt is too heavy:** the tablecloth geometry changed, the lighting shifted, body posture drifted, or objects moved — even though the base was strong. These are symptoms of a prompt that gave the model too much to work with.
+
+**Minimal Phase 2 structure for small additions (hair, color correction):**
+1. Base preservation clause (first words)
+2. One sentence of scene context
+3. One sentence describing the addition (position + color anchor)
+4. Preservation + paint removal statement
+
+That's it. No atmosphere description, no full scene recreation, no style reinforcement. Aurora already has IMAGE_1 — additional description is noise that introduces variance.
+
+---
+
 ## Phase 2 corrected prompt structure
 
 **WARNING — wrong opening patterns that break base preservation:**

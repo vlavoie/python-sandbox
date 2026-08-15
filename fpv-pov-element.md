@@ -155,6 +155,8 @@ When an Element Base Template is provided (IMAGE_1), the workflow switches to Ph
 - Any element where Aurora consistently misreads the center-empty constraint
 - Complex asymmetric or flowing hair where split-generation is impractical
 
+**Template sizing determines the visual weight of the hair in the final composite.** The green zone width is not "approximately where the hair is" — it is a precise prescription. A 16%-wide side strip produces very thick hair columns in the composite. For natural-looking border hair, 8–10% per side is usually the right target. Design the template for the intended final weight, not for the theoretical maximum coverage.
+
 ---
 
 ## Output
