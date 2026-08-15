@@ -65,7 +65,7 @@ class WorkflowPanel(ABC):
         self._draft_mode_radio = None
         self.image_model_dropdown = None
         self.draft_model_dropdown = None
-        self.image_quality_dropdown = None
+        self.image_resolution_dropdown = None
         self._work_item_label = None
 
     # ── abstract interface ────────────────────────────────────────────────
@@ -129,10 +129,10 @@ class WorkflowPanel(ABC):
                 interactive=True,
                 allow_custom_value=True,
             )
-            self.image_quality_dropdown = gr.Dropdown(
-                choices=["auto", "low", "standard", "high"],
-                value=ps.image_quality,
-                label="Quality",
+            self.image_resolution_dropdown = gr.Dropdown(
+                choices=["auto", "1k", "2k"],
+                value=ps.image_resolution,
+                label="Resolution",
                 interactive=True,
             )
 
@@ -157,7 +157,7 @@ class WorkflowPanel(ABC):
             self.output_gallery,
             self.review_chatbot,
             self.image_model_dropdown,
-            self.image_quality_dropdown,
+            self.image_resolution_dropdown,
             self._work_item_label,
         ]
 
@@ -170,7 +170,7 @@ class WorkflowPanel(ABC):
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
             gr.update(value=ps.image_model),
-            gr.update(value=ps.image_quality),
+            gr.update(value=ps.image_resolution),
             gr.update(value=self._work_item_status()),
         ]
 
@@ -206,7 +206,7 @@ class WorkflowPanel(ABC):
         num_images: int = 3,
         aspect_ratio: str = "16:9",
         model_override: str = None,
-        quality_override: str = None,
+        resolution_override: str = None,
         progress_callback=None,
     ) -> Tuple[str, List, List]:
         client = self.app.client
@@ -218,14 +218,14 @@ class WorkflowPanel(ABC):
         if not ref:
             return "❌ No reference image.", [], []
         try:
-            image_data_list = client.generate_images(
+            image_data_list, total_cost_ticks = client.generate_images(
                 prompt=prompt,
                 reference_image=ref,
                 num_images=num_images,
                 additional_images=self.get_additional_images_for_generation(),
                 aspect_ratio=aspect_ratio,
                 model=model_override,
-                quality=quality_override,
+                resolution=resolution_override,
                 progress_callback=progress_callback,
             )
             if not image_data_list:
@@ -251,12 +251,13 @@ class WorkflowPanel(ABC):
             ps = self.app.project_state
             is_partial = len(images) < num_images
             wi_label = f"Work Item {self.work_item} · Iteration {self.iteration_count}"
+            cost_str = f"💰 Cost: ${total_cost_ticks / 10_000_000_000:.4f}" if total_cost_ticks else ""
             status = (
                 f"⚠️ Partial: {len(images)}/{num_images} images ({wi_label})\n"
-                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
+                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/\n{cost_str}"
                 if is_partial else
                 f"✅ Generated {len(images)} images ({wi_label})\n"
-                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
+                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/\n{cost_str}"
             )
             ps.save_project_state()
             return status, images, images
@@ -272,11 +273,11 @@ class WorkflowPanel(ABC):
                 progress(c / t, desc=f"Image {c}/{t} done...")
 
             ps = self.app.project_state
-            q = ps.image_quality if ps.image_quality != "auto" else None
+            r = ps.image_resolution if ps.image_resolution != "auto" else None
             progress(0, desc=f"Generating {num_images} image(s)...")
             _, images, _ = self.generate_images_batch(
                     prompt, num_images, aspect_ratio,
-                    quality_override=q,
+                    resolution_override=r,
                     progress_callback=on_done
                 )
 
@@ -555,7 +556,7 @@ class WorkflowPanel(ABC):
     def _wire_events(self) -> None:
         """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
         self.image_model_dropdown.change(fn=self.app.update_image_model, inputs=[self.image_model_dropdown])
-        self.image_quality_dropdown.change(fn=self.app.update_image_quality, inputs=[self.image_quality_dropdown])
+        self.image_resolution_dropdown.change(fn=self.app.update_image_resolution, inputs=[self.image_resolution_dropdown])
 
         self._gen_prompt_btn.click(
             fn=self.do_generate_prompt,

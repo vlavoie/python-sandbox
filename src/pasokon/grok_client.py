@@ -228,9 +228,9 @@ class GrokClient:
         additional_images: Optional[List[str]] = None,
         aspect_ratio: str = "16:9",
         model: str = None,
-        quality: str = None,
+        resolution: str = None,
         progress_callback=None
-    ) -> List[bytes]:
+    ) -> tuple:
         """Generate images using Grok Imagine API.
         
         Args:
@@ -262,8 +262,8 @@ class GrokClient:
             "images": images_array,
             "aspect_ratio": aspect_ratio,
         }
-        if quality and quality != "auto":
-            payload["quality"] = quality
+        if resolution and resolution != "auto":
+            payload["resolution"] = resolution
 
         print(f"\n🎨 Generating {num_images} images in parallel...")
         print(f"   Model: {effective_model}")
@@ -284,35 +284,34 @@ class GrokClient:
         elif has_angle_brackets:
             print(f"   ✅ Prompt uses correct <IMAGE_N> reference syntax")
         
-        def generate_single_image(index: int) -> tuple[int, bytes]:
-            """Generate a single image (for parallel execution)."""
+        def generate_single_image(index: int) -> tuple:
+            """Generate a single image (for parallel execution). Returns (index, bytes, cost_ticks)."""
             with httpx.Client(timeout=180.0) as client:
                 try:
                     start_time = time.time()
                     print(f"   🚀 Starting image {index + 1}/{num_images}...")
-                    
+
                     response = client.post(
-                        f"{self.base_url}/images/edits",  # FIXED: Use edits endpoint for reference images
+                        f"{self.base_url}/images/edits",
                         headers=self.headers,
                         json=payload
                     )
                     response.raise_for_status()
                     result = response.json()
-                    
-                    api_time = time.time() - start_time
-                    
+
+                    cost_ticks = result.get("usage", {}).get("cost_in_usd_ticks", 0) or 0
+
                     # Grok returns image URLs, not base64
                     if "data" in result and len(result["data"]) > 0:
                         image_url = result["data"][0].get("url")
                         if image_url:
-                            # Download the image
                             img_response = client.get(image_url)
                             img_response.raise_for_status()
                             image_data = img_response.content
 
                             total_time = time.time() - start_time
                             print(f"   ✅ Image {index + 1}/{num_images} complete ({total_time:.1f}s)")
-                            return (index, image_data)
+                            return (index, image_data, cost_ticks)
                         else:
                             raise Exception("Warning: No images returned")
                     else:
@@ -345,19 +344,19 @@ class GrokClient:
         # Generate all images in parallel
         overall_start = time.time()
         images = [None] * num_images  # Pre-allocate list to maintain order
+        cost_ticks_list = [0] * num_images
         errors = []
-        
+
         with ThreadPoolExecutor(max_workers=num_images) as executor:
-            # Submit all tasks
             future_to_index = {executor.submit(generate_single_image, i): i for i in range(num_images)}
-            
-            # Collect results as they complete
+
             completed = 0
             for future in as_completed(future_to_index):
                 index = future_to_index[future]
                 try:
-                    idx, image_data = future.result()
+                    idx, image_data, ticks = future.result()
                     images[idx] = image_data
+                    cost_ticks_list[idx] = ticks
                 except Exception as e:
                     error_msg = str(e)
                     errors.append((index + 1, error_msg))
@@ -365,33 +364,34 @@ class GrokClient:
                 completed += 1
                 if progress_callback:
                     progress_callback(completed, num_images)
-        
-        # Filter out None values (failed images)
-        successful_images = [img for img in images if img is not None]
-        
+
+        # Filter out None values (failed images) while keeping paired cost ticks
+        successful_images = []
+        total_cost_ticks = 0
+        for img, ticks in zip(images, cost_ticks_list):
+            if img is not None:
+                successful_images.append(img)
+                total_cost_ticks += ticks
+
         overall_time = time.time() - overall_start
-        
+
         if errors:
             failed_count = len(errors)
             success_count = len(successful_images)
             error_summary = "\n".join([f"  • Image {idx}: {msg.split(chr(10))[0]}" for idx, msg in errors])
-            
+
             if success_count == 0:
-                # All images failed
                 raise Exception(
                     f"All {num_images} images failed to generate:\n{error_summary}"
                 )
             else:
-                # Partial success - return successful images with warning
                 print(f"\n⚠️ {success_count}/{num_images} images generated successfully in {overall_time:.1f}s")
                 print(f"❌ {failed_count} image(s) failed:\n{error_summary}\n")
-                # Return successful images (caller will handle the partial result)
-                return successful_images
+                return (successful_images, total_cost_ticks)
         else:
-            # All images succeeded
             print(f"\n✨ All {num_images} images generated in {overall_time:.1f}s (avg {overall_time/num_images:.1f}s per image)\n")
-        
-        return images
+
+        return (successful_images, total_cost_ticks)
     
     def review_images(
         self,

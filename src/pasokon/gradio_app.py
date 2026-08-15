@@ -103,8 +103,8 @@ class FPVPOVApp:
             self.client.image_model = model_name
         self.project_state.save_project_state()
 
-    def update_image_quality(self, quality: str) -> None:
-        self.project_state.image_quality = quality
+    def update_image_resolution(self, resolution: str) -> None:
+        self.project_state.image_resolution = resolution
         self.project_state.save_project_state()
 
     # ── UI wrappers for project load/set ──────────────────────────────────
