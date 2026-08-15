@@ -303,8 +303,7 @@ Context:
             self.greenzone_image,
             self.output_gallery,
             self.image_model_dropdown,
-            self.draft_model_dropdown,
-            self.draft_aspect_ratio_dropdown,
+            self.image_quality_dropdown,
             self._work_item_label,
         ]
 
@@ -327,8 +326,7 @@ Context:
             gr.update(value=gz),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=ps.image_model),
-            gr.update(value=ps.draft_image_model),
-            gr.update(value=ps.draft_aspect_ratio),
+            gr.update(value=ps.image_quality),
             gr.update(value=self._work_item_status()),
         ]
 

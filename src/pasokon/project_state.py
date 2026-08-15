@@ -59,8 +59,7 @@ class ProjectState:
         # App-level model preferences (persisted per project)
         self.chat_model = "grok-4.20"
         self.image_model = "grok-imagine-image-pro"
-        self.draft_image_model = "grok-imagine-image"
-        self.draft_aspect_ratio = "1:1"
+        self.image_quality = "auto"
 
         # Registered workflow panels: name → panel instance
         self._panels: Dict = {}
@@ -163,8 +162,7 @@ class ProjectState:
                 "project_name": self.project_name,
                 "chat_model": self.chat_model,
                 "image_model": self.image_model,
-                "draft_image_model": self.draft_image_model,
-                "draft_aspect_ratio": self.draft_aspect_ratio,
+                "image_quality": self.image_quality,
                 "last_saved": datetime.now().isoformat(),
                 "panels": panels_state,
             }
@@ -218,8 +216,7 @@ class ProjectState:
             self.project_name = state.get("project_name", "untitled-project")
             self.chat_model = state.get("chat_model", "grok-4.20")
             self.image_model = state.get("image_model", "grok-imagine-image-pro")
-            self.draft_image_model = state.get("draft_image_model", "grok-imagine-image")
-            self.draft_aspect_ratio = state.get("draft_aspect_ratio", "1:1")
+            self.image_quality = state.get("image_quality", "auto")
 
             # New format: state["panels"]["fpv"] / state["panels"]["element"]
             # Legacy format: FPV state is flat at the top level (no "panels" key)

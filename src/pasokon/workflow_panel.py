@@ -65,7 +65,7 @@ class WorkflowPanel(ABC):
         self._draft_mode_radio = None
         self.image_model_dropdown = None
         self.draft_model_dropdown = None
-        self.draft_aspect_ratio_dropdown = None
+        self.image_quality_dropdown = None
         self._work_item_label = None
 
     # ── abstract interface ────────────────────────────────────────────────
@@ -114,7 +114,7 @@ class WorkflowPanel(ABC):
         """Add subclass-specific inputs above the shared prompt box."""
 
     def render_images_tab_extra_controls(self) -> None:
-        """Create the model selection dropdowns shared by all panels."""
+        """Create the model and quality dropdowns shared by all panels."""
         ps = self.app.project_state
         with gr.Row():
             self.image_model_dropdown = gr.Dropdown(
@@ -125,26 +125,14 @@ class WorkflowPanel(ABC):
                     "grok-imagine-image",
                 ],
                 value=ps.image_model,
-                label="🎨 Production Model",
+                label="🎨 Model",
                 interactive=True,
                 allow_custom_value=True,
             )
-            self.draft_model_dropdown = gr.Dropdown(
-                choices=[
-                    "grok-imagine-image",
-                    "grok-imagine-image-2.0",
-                    "grok-imagine-image-quality",
-                    "grok-imagine-image-pro",
-                ],
-                value=ps.draft_image_model,
-                label="🖼️ Draft Model",
-                interactive=True,
-                allow_custom_value=True,
-            )
-            self.draft_aspect_ratio_dropdown = gr.Dropdown(
-                choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
-                value=ps.draft_aspect_ratio,
-                label="📐 Draft Aspect Ratio",
+            self.image_quality_dropdown = gr.Dropdown(
+                choices=["auto", "low", "standard", "high"],
+                value=ps.image_quality,
+                label="Quality",
                 interactive=True,
             )
 
@@ -169,8 +157,7 @@ class WorkflowPanel(ABC):
             self.output_gallery,
             self.review_chatbot,
             self.image_model_dropdown,
-            self.draft_model_dropdown,
-            self.draft_aspect_ratio_dropdown,
+            self.image_quality_dropdown,
             self._work_item_label,
         ]
 
@@ -183,8 +170,7 @@ class WorkflowPanel(ABC):
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
             gr.update(value=ps.image_model),
-            gr.update(value=ps.draft_image_model),
-            gr.update(value=ps.draft_aspect_ratio),
+            gr.update(value=ps.image_quality),
             gr.update(value=self._work_item_status()),
         ]
 
@@ -220,6 +206,7 @@ class WorkflowPanel(ABC):
         num_images: int = 3,
         aspect_ratio: str = "16:9",
         model_override: str = None,
+        quality_override: str = None,
         progress_callback=None,
     ) -> Tuple[str, List, List]:
         client = self.app.client
@@ -238,6 +225,7 @@ class WorkflowPanel(ABC):
                 additional_images=self.get_additional_images_for_generation(),
                 aspect_ratio=aspect_ratio,
                 model=model_override,
+                quality=quality_override,
                 progress_callback=progress_callback,
             )
             if not image_data_list:
@@ -277,25 +265,19 @@ class WorkflowPanel(ABC):
             return f"❌ Error: {str(e)}", [], []
 
     def _generate_images_for_ui(
-        self, prompt, num_images, aspect_ratio, draft_mode, progress=gr.Progress()
+        self, prompt, num_images, aspect_ratio, progress=gr.Progress()
     ):
         try:
             def on_done(c, t):
                 progress(c / t, desc=f"Image {c}/{t} done...")
 
             ps = self.app.project_state
-            if draft_mode == "Draft":
-                progress(0, desc=f"Draft ({ps.draft_image_model}, {ps.draft_aspect_ratio})...")
-                _, images, _ = self.generate_images_batch(
-                    prompt, num_images,
-                    aspect_ratio=ps.draft_aspect_ratio,
-                    model_override=ps.draft_image_model,
-                    progress_callback=on_done,
-                )
-            else:
-                progress(0, desc=f"Generating {num_images} image(s)...")
-                _, images, _ = self.generate_images_batch(
-                    prompt, num_images, aspect_ratio, progress_callback=on_done
+            q = ps.image_quality if ps.image_quality != "auto" else None
+            progress(0, desc=f"Generating {num_images} image(s)...")
+            _, images, _ = self.generate_images_batch(
+                    prompt, num_images, aspect_ratio,
+                    quality_override=q,
+                    progress_callback=on_done
                 )
 
             if not images:
@@ -532,13 +514,6 @@ class WorkflowPanel(ABC):
                         choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
                         value="16:9",
                         label="Aspect Ratio",
-                        info="Ignored in Draft mode",
-                    )
-                    self._draft_mode_radio = gr.Radio(
-                        choices=["Production", "Draft"],
-                        value="Production",
-                        label="Mode",
-                        info="Draft uses the draft model and draft ratio from above",
                     )
                 self._gen_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
                 self._work_item_label = gr.Markdown(value=self._work_item_status())
@@ -580,8 +555,7 @@ class WorkflowPanel(ABC):
     def _wire_events(self) -> None:
         """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
         self.image_model_dropdown.change(fn=self.app.update_image_model, inputs=[self.image_model_dropdown])
-        self.draft_model_dropdown.change(fn=self.app.update_draft_image_model, inputs=[self.draft_model_dropdown])
-        self.draft_aspect_ratio_dropdown.change(fn=self.app.update_draft_aspect_ratio, inputs=[self.draft_aspect_ratio_dropdown])
+        self.image_quality_dropdown.change(fn=self.app.update_image_quality, inputs=[self.image_quality_dropdown])
 
         self._gen_prompt_btn.click(
             fn=self.do_generate_prompt,
@@ -595,7 +569,6 @@ class WorkflowPanel(ABC):
                 self.prompt_box,
                 self._num_images_slider,
                 self._aspect_ratio_dropdown,
-                self._draft_mode_radio,
             ],
             outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot, self._work_item_label],
         )

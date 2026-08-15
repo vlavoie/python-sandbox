@@ -39,6 +39,7 @@ class FPVPOVApp:
         self.project_state = ProjectState()
         self.fpv_panel = FPVWorkflowPanel(self)
         self.element_panel = ElementWorkflowPanel(self)
+        self.project_selector = None  # set during create_interface
 
         self.project_state.register_panel("fpv", self.fpv_panel)
         self.project_state.register_panel("element", self.element_panel)
@@ -102,12 +103,8 @@ class FPVPOVApp:
             self.client.image_model = model_name
         self.project_state.save_project_state()
 
-    def update_draft_image_model(self, model_name: str) -> None:
-        self.project_state.draft_image_model = model_name
-        self.project_state.save_project_state()
-
-    def update_draft_aspect_ratio(self, ratio: str) -> None:
-        self.project_state.draft_aspect_ratio = ratio
+    def update_image_quality(self, quality: str) -> None:
+        self.project_state.image_quality = quality
         self.project_state.save_project_state()
 
     # ── UI wrappers for project load/set ──────────────────────────────────
@@ -117,6 +114,7 @@ class FPVPOVApp:
         return (
             status,
             display,
+            gr.update(choices=self.project_state.list_projects(), value=None),
             *self.fpv_panel.get_ui_restore_values(),
             *self.element_panel.get_ui_restore_values(),
             gr.update(value=self.project_state.chat_model),
@@ -189,7 +187,7 @@ class FPVPOVApp:
                             )
                             set_project_btn = gr.Button("💾 Set Project Name")
                         with gr.Column():
-                            project_selector = gr.Dropdown(
+                            self.project_selector = gr.Dropdown(
                                 label="Load Existing Project",
                                 choices=self.project_state.list_projects(),
                                 value=None,
@@ -225,6 +223,7 @@ class FPVPOVApp:
             OUTPUTS_PROJECT = [
                 project_mgmt_status,
                 current_project_display,
+                self.project_selector,
                 *self.fpv_panel.get_ui_outputs(),
                 *self.element_panel.get_ui_outputs(),
                 chat_model_dropdown,
@@ -243,16 +242,12 @@ class FPVPOVApp:
             )
             load_project_btn.click(
                 fn=self._load_project_for_ui,
-                inputs=[project_selector],
+                inputs=[self.project_selector],
                 outputs=OUTPUTS_PROJECT,
             )
             manual_save_btn.click(
                 fn=self.project_state.save_project_state,
                 outputs=[project_mgmt_status],
-            )
-            project_selector.focus(
-                fn=lambda: gr.Dropdown(choices=self.project_state.list_projects()),
-                outputs=[project_selector],
             )
             chat_model_dropdown.change(
                 fn=self.update_chat_model,

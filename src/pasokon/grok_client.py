@@ -228,6 +228,7 @@ class GrokClient:
         additional_images: Optional[List[str]] = None,
         aspect_ratio: str = "16:9",
         model: str = None,
+        quality: str = None,
         progress_callback=None
     ) -> List[bytes]:
         """Generate images using Grok Imagine API.
@@ -259,8 +260,10 @@ class GrokClient:
             "model": effective_model,
             "prompt": prompt,
             "images": images_array,
-            "aspect_ratio": aspect_ratio
+            "aspect_ratio": aspect_ratio,
         }
+        if quality and quality != "auto":
+            payload["quality"] = quality
 
         print(f"\n🎨 Generating {num_images} images in parallel...")
         print(f"   Model: {effective_model}")
