@@ -2,7 +2,6 @@
 
 import httpx
 import io
-import tempfile
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -166,9 +165,10 @@ class WorkflowPanel(ABC):
         """gr.update() values matching get_ui_outputs() — override in subclass."""
         ps = self.app.project_state
         is_aurora = ps.image_model == "grok-imagine-image-2.0"
+        review_images = self.review_context.get("failed_images", []) if self.review_context else []
         return [
             gr.update(value=self.current_prompt),
-            gr.update(value=render_gallery_html([])),
+            gr.update(value=render_gallery_html(review_images)),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
             gr.update(value=ps.image_model),
@@ -236,15 +236,7 @@ class WorkflowPanel(ABC):
             saved_dir = self._save_images_permanently(
                 image_data_list, prompt, self.iteration_count, aspect_ratio
             )
-            images = []
-            for img_data in image_data_list:
-                img = Image.open(io.BytesIO(img_data))
-                if img.mode not in ("RGB", "RGBA"):
-                    img = img.convert("RGBA")
-                tf = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                img.save(tf.name, "PNG", optimize=True)
-                tf.close()
-                images.append(tf.name)
+            images = [str(saved_dir / f"image_{i}.png") for i in range(1, len(image_data_list) + 1)]
 
             self.iteration_count += 1
             self.generated_images = images
