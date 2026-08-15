@@ -175,6 +175,7 @@ class ElementWorkflowPanel(WorkflowPanel):
             self.element_reference = gr.Image(
                 label="Character Reference (optional — uses FPV reference if empty)",
                 type="filepath",
+                image_mode=None,
                 sources=["upload"],
                 height=220,
             )
