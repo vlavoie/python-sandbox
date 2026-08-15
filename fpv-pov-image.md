@@ -25,7 +25,7 @@ The correct mental model: describe the exact image you want to see, using spatia
 
 **Phase 2 (green-zone enhancement):** Surgical local addition to the Phase 1 base. Only the green-marked zones change. IMAGE_1 is the base; everything outside the zones stays pixel-identical.
 
-**Prompt length:** A concise 60–120 word spatial description almost always outperforms a 300-word document with constraints and bans. Prefer precise and short over exhaustive.
+**Prompt density:** Aurora hallucinates into gaps. Every unspecified material, vague lighting condition, or undefined area in the scene is an opening for the model to deviate. Fill the frame description as completely as possible — describe every visible element with specific, sensory language. "Ceiling visible" is a gap. "Cream-painted ceiling with subtle plaster texture, a modern round pendant lamp centered in the upper third casting warm amber light" closes it. There is no upper limit on detail; more specificity is always better.
 
 ---
 
@@ -59,10 +59,19 @@ Looking down:
 
 ## Spatial composition — how to describe what's in the frame
 
-After the opening sentence, describe the spatial layout of the frame. Use concrete position language:
+After the opening sentence, describe the spatial layout of the frame densely. Use concrete position language:
 - "upper [X]% of the frame" / "lower frame edge" / "center of the frame"
 - "mid-frame" / "peripheral edges" / "foreground" / "background"
 - "partially occludes" / "extends across" / "anchored to the bottom edge"
+
+**Visual density — the most important quality signal:** Every element in the scene should be described with specific, sensory language. Push for:
+- **Materials and textures:** "worn cotton hoodie, slightly creased at the collar" not "hoodie"; "cream plaster ceiling" not "ceiling"
+- **Lighting:** "warm amber bedside lamp casting soft directional shadows" not "indoor lighting"; "cool overcast daylight from a left-side window" not "natural light"
+- **Colors:** specify actual colors — "deep navy" not "dark", "pale sage green walls" not "walls visible"
+- **Atmosphere:** "intimate, quiet late-afternoon atmosphere, slightly warm color temperature"
+- **Depth cues:** "bookshelf softly out of focus in the far background", "shallow depth of field"
+
+The more precisely you fill the frame with real content, the less room Aurora has to hallucinate. Sparse descriptions get filled with generic hallucinations. Dense, specific descriptions anchor the model.
 
 **What body parts are visible:** Describe only the parts that ARE visible and exactly where they sit. Do not mention body parts that should not appear — simply do not describe them. Aurora fills the frame with what you specify; what you don't specify doesn't exist.
 
@@ -126,9 +135,9 @@ Describe them by what they look like and where they are in the frame, as seen fr
 
 ## Output format
 
-Generate a single natural-language prompt. Front-load the POV anchor, camera direction, and primary frame content. Use spatial descriptions. No ban lists. No repetition. No negative language. State each element once, precisely, early.
+Generate a single natural-language prompt. Front-load the POV anchor, camera direction, and primary frame content. Use spatial descriptions. No ban lists. No repetition. No negative language. State each element once, precisely.
 
-Aim for 60–120 words. Spatial and specific beats long and exhaustive.
+Fill every sentence with specific visual content — materials, colors, lighting quality, textures, atmosphere, depth. Do not pad with constraints; pad with cinematic detail. Describe every visible element as completely as possible. There is no upper limit on specificity.
 
 Output **only** the finished prompt inside a single markdown code block (``` ... ```). No explanations outside the code block.
 

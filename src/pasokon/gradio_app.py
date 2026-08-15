@@ -239,7 +239,7 @@ For hair/fringe additions, describe as spatial peripheral presence:
 
 If a solid-color exclusion zone is present (e.g. bright pink): "The [color] area in IMAGE_1 remains exactly as shown."
 
-Target: 60–120 words total. Spatial and specific. No ban lists. No repetition.
+Fill every sentence with specific visual content — materials, lighting quality, colors, textures, atmosphere. Aurora hallucinates into gaps; describe every visible element as completely as possible. No ban lists. No repetition. No upper limit on specificity.
 
 ---
 

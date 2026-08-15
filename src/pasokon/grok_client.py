@@ -422,7 +422,7 @@ class GrokClient:
                 })
 
         for i, img_path in enumerate(failed_images, 1):
-            content.append({"type": "text", "text": f"Failed image {i}:"})
+            content.append({"type": "text", "text": f"Image {i}:"})
             content.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"}

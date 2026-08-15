@@ -137,7 +137,7 @@ A primary failure mode is when the model regenerates the entire image instead of
 🎯 Mode: {mode_label}
 📸 {len(images_to_review)} failed image(s) being analyzed
 🗂 <IMAGE_0> = Character reference (always){mode_specific_info}
-💬 Refer to failed images as 'failed image 1', 'failed image 2', etc.
+💬 Refer to images as 'image 1', 'image 2', etc. (or 'picture 1', 'picture 2')
 ❓ Ask questions or request changes"""
 
             return self.phase1_review_history, instructions, images_to_review
@@ -181,7 +181,7 @@ A primary failure mode is when the model regenerates the entire image instead of
                     })
 
                 for i, img_path in enumerate(self.phase1_review_context.get("failed_images", []), 1):
-                    content.append({"type": "text", "text": f"Failed image {i}:"})
+                    content.append({"type": "text", "text": f"Image {i}:"})
                     content.append({
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{self.client._encode_image(img_path)}"}

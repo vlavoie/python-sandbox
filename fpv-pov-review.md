@@ -142,7 +142,7 @@ No ban lists. State each element once, precisely, early. Aim for 60–120 words.
 - No repetition — state each element once.
 - Preserve what was working. If the identity/style was correct and only the camera direction failed, rewrite only the composition opening. Keep the good parts.
 - When switching techniques, explain in the blurb.
-- Concise beats long. A tight 70-word spatial brief almost always outperforms a 300-word constraint document.
+- **Density matters.** Aurora hallucinates into gaps. A corrected prompt should be rich with specific visual content — materials, lighting quality, colors, textures, atmosphere — not just compositionally correct. Describe every visible element as completely as possible. "Ceiling visible" is a gap. "Cream plaster ceiling filling the upper 70%, warm amber pendant lamp centered in the upper third" closes it. There is no upper limit on specificity.
 
 ---
 
