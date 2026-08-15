@@ -220,6 +220,13 @@ PHASE 1 SCENE CONTEXT — what IMAGE_1 shows (use this to understand the scene):
 {self.phase1_scene_description}
 
 """
+                previous_prompt_section = ""
+                if self.current_prompt and self.review_mode == "phase2":
+                    previous_prompt_section = f"""
+PREVIOUS PHASE 2 PROMPT — iterate from this, refining based on the updated zone description above:
+{self.current_prompt}
+
+"""
                 phase2_prefix = f"""PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
 
 You are generating a Grok Imagine prompt for Phase 2: a surgical local addition to an existing base image.
@@ -229,8 +236,7 @@ AURORA MODEL RULES — apply these before generating anything:
 - Aurora's first 20–30 tokens dominate the output. Front-load the most critical instruction.
 - Repetition dilutes, not emphasizes. State each element once, precisely, early.
 - Write spatially: describe what appears where in the frame.
-{scene_context_section}
-FIXED IMAGE ASSIGNMENT:
+{scene_context_section}{previous_prompt_section}FIXED IMAGE ASSIGNMENT:
 - <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color lock to this image
 - <IMAGE_1> = GREEN-MARKED BASE — unchanged spatial base; only the green-painted zones change
 
