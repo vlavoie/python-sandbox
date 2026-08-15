@@ -488,15 +488,15 @@ class WorkflowPanel(ABC):
         with gr.Tabs(elem_id=f"{self.panel_id}_tabs") as self.panel_tabs:
             with gr.Tab("📝 Generate Prompt", id=f"{self.panel_id}_gen_prompt"):
                 self.render_prompt_tab_content()
+                self._gen_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
+
+            with gr.Tab("🖼️ Generate Images", id=f"{self.panel_id}_gen_images"):
                 self.prompt_box = gr.Textbox(
                     label="Prompt (edit if needed)",
                     lines=10,
                     max_lines=10,
                     placeholder="Generated prompt will appear here...",
                 )
-                self._gen_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
-
-            with gr.Tab("🖼️ Generate Images", id=f"{self.panel_id}_gen_images"):
                 self.render_images_tab_extra_controls()
                 with gr.Row():
                     self._num_images_slider = gr.Slider(
