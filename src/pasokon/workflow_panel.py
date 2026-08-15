@@ -481,7 +481,10 @@ class WorkflowPanel(ABC):
         self.iteration_count = d.get("iteration_count", 0)
         self.work_item = d.get("work_item", 1)
         self.review_history = d.get("review_history", [])
-        self.review_context = d.get("review_context", {})
+        # Always reset review_context on load — its failed_images may be stale.
+        # The first send_message call will invoke start_review, which rebuilds
+        # context from self.generated_images (permanent paths, always current).
+        self.review_context = {}
 
     # ── UI render ─────────────────────────────────────────────────────────
 

@@ -19,6 +19,8 @@ instead of restoring from saved state.
   cycle and is only valid during an active in-session review, not across restarts.
 
 ## Key Invariant
-On project load, the review gallery always shows `self.generated_images` (the latest
-permanent save). `review_context["failed_images"]` is only used during a live review
-session (controlled by `send_message` → `start_review` / `continue_review`), never on load.
+`review_context` is always cleared on `deserialize()` (never restored from disk).
+This forces `start_review` on the first message of every new session, which rebuilds
+context from `self.generated_images`. Restoring a stale `review_context` across restarts
+causes the LLM to review old images and the gallery to revert to old thumbnails after send.
+`review_history` IS restored (for display), but gets replaced when `start_review` runs.
