@@ -309,6 +309,7 @@ Context:
 
     def get_ui_restore_values(self) -> List:
         ps = self.app.project_state
+        is_aurora = ps.image_model == "grok-imagine-image-2.0"
         scene_to_show = (
             self.current_phase2_description if self.review_mode == "phase2"
             else self.current_scene
@@ -326,7 +327,7 @@ Context:
             gr.update(value=gz),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=ps.image_model),
-            gr.update(value=ps.image_resolution),
+            gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
             gr.update(value=self._work_item_status()),
         ]
 

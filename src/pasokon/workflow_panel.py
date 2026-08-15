@@ -129,11 +129,12 @@ class WorkflowPanel(ABC):
                 interactive=True,
                 allow_custom_value=True,
             )
+            is_aurora = ps.image_model == "grok-imagine-image-2.0"
             self.image_resolution_dropdown = gr.Dropdown(
                 choices=["auto", "1k", "2k"],
-                value=ps.image_resolution,
-                label="Resolution",
-                interactive=True,
+                value=ps.image_resolution if is_aurora else "auto",
+                label="Resolution (2.0 only)",
+                interactive=is_aurora,
             )
 
     def get_prompt_tab_inputs(self) -> List:
@@ -164,13 +165,14 @@ class WorkflowPanel(ABC):
     def get_ui_restore_values(self) -> List:
         """gr.update() values matching get_ui_outputs() — override in subclass."""
         ps = self.app.project_state
+        is_aurora = ps.image_model == "grok-imagine-image-2.0"
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html([])),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
             gr.update(value=ps.image_model),
-            gr.update(value=ps.image_resolution),
+            gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
             gr.update(value=self._work_item_status()),
         ]
 
@@ -555,7 +557,17 @@ class WorkflowPanel(ABC):
 
     def _wire_events(self) -> None:
         """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
-        self.image_model_dropdown.change(fn=self.app.update_image_model, inputs=[self.image_model_dropdown])
+
+        def _on_model_change(model):
+            self.app.update_image_model(model)
+            is_aurora = model == "grok-imagine-image-2.0"
+            return gr.update(interactive=is_aurora, value="auto" if not is_aurora else self.app.project_state.image_resolution)
+
+        self.image_model_dropdown.change(
+            fn=_on_model_change,
+            inputs=[self.image_model_dropdown],
+            outputs=[self.image_resolution_dropdown],
+        )
         self.image_resolution_dropdown.change(fn=self.app.update_image_resolution, inputs=[self.image_resolution_dropdown])
 
         self._gen_prompt_btn.click(
