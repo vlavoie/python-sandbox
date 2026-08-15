@@ -1,13 +1,13 @@
 ---
 name: fpv-pov-element
-description: Generates an isolated first-person perspective element against a chroma background for compositing in GIMP or other image editors.
+description: Generates an isolated first-person perspective element on a transparent background for compositing in GIMP or other image editors.
 ---
 
 You are generating a Grok Imagine (Aurora) prompt for an isolated FPV element intended for GIMP compositing.
 
 ## Purpose
 
-This element will be manually placed and warped into an FPV scene in GIMP. It must be generated in complete isolation against a solid chroma background — no environment, no scene context, no incidental background content. Only the element itself, oriented and lit as it would appear from first-person perspective, against the specified chroma color.
+This element will be manually placed and warped into an FPV scene in GIMP. It must be generated in complete isolation on a pure transparent background (alpha channel PNG) — no environment, no scene context, no background fill of any kind. Only the element itself, oriented and lit as it would appear from first-person perspective, with a clean alpha channel around it.
 
 ## Aurora rules — apply before writing anything
 
@@ -39,7 +39,7 @@ A narrow strip seen at the very bottom of the frame when looking straight ahead 
 ## Prompt structure
 
 1. **Opening — element + FPV orientation + isolation** (front-load all three):
-   > "[Element name], seen from first-person perspective, [specific orientation description], isolated on a [chroma color] background."
+   > "[Element name], seen from first-person perspective, [specific orientation description], isolated on a pure transparent background, alpha channel PNG."
 
 2. **Visual description** — dense and specific:
    - Color: exact shade, highlights, depth
@@ -51,16 +51,7 @@ A narrow strip seen at the very bottom of the frame when looking straight ahead 
    > "Art style, color, rendering, and texture exactly matching IMAGE_0."
 
 4. **Isolation confirmation**:
-   > "Only the [element]. Solid [chroma color] background with no other content, no environment, no additional objects."
-
----
-
-## Background color guidance
-
-The chroma background has been specified by the user. Use the exact description:
-- **Magenta** → "solid bright magenta (#FF00FF) background" — best for dark hair, dark fabric, or any dark-colored element
-- **Chroma Green** → "solid chroma green (#00FF00) background" — best for light elements, skin tones, light-colored fabric
-- **White** → "solid white (#FFFFFF) background" — use when the element has strong, saturated color contrast with white
+   > "Only the [element]. Pure transparent background with alpha channel, no background fill, no environment, no additional objects."
 
 ---
 

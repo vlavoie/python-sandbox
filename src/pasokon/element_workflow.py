@@ -24,12 +24,10 @@ class ElementWorkflowPanel(WorkflowPanel):
         # Element-specific persistent state
         self.element_reference_path: Optional[str] = None
         self.element_description: str = ""
-        self.background_color: str = "Magenta"
 
         # Gradio component refs (set by render)
         self.element_reference = None
         self.element_desc_box = None
-        self.element_bg_radio = None
 
     @property
     def panel_id(self) -> str:
@@ -51,7 +49,7 @@ class ElementWorkflowPanel(WorkflowPanel):
         return {
             "failed_images": images_to_review,
             "original_prompt": self.current_prompt,
-            "scene_description": f"FPV element: {self.element_description}\nBackground: {self.background_color}",
+            "scene_description": f"FPV element: {self.element_description}\nBackground: transparent (alpha channel PNG)",
             "reference_image": self.element_reference_path,
             "additional_images": None,
             "review_mode": "phase1",
@@ -64,7 +62,6 @@ class ElementWorkflowPanel(WorkflowPanel):
         self,
         reference_image,
         element_description: str,
-        background_color: str,
         progress=gr.Progress(),
     ):
         _btn_reset = gr.update(value="🎯 Generate Prompt", interactive=True)
@@ -87,16 +84,10 @@ class ElementWorkflowPanel(WorkflowPanel):
             progress(0, desc="Saving reference...")
             self.element_reference_path = ps.save_uploaded_file(reference_image)
             self.element_description = element_description
-            self.background_color = background_color
 
-            bg_descriptions = {
-                "Magenta": "solid bright magenta (#FF00FF)",
-                "Chroma Green": "solid chroma green (#00FF00)",
-                "White": "solid white (#FFFFFF)",
-            }
-            bg_desc = bg_descriptions.get(background_color, "solid bright magenta (#FF00FF)")
             element_scene = (
-                f"FPV element to generate:\n{element_description}\n\nBackground: {bg_desc}"
+                f"FPV element to generate:\n{element_description}"
+                "\n\nBackground: pure transparent background, alpha channel PNG, no background fill"
             )
 
             progress(0.5, desc="Waiting for Grok API (~30s)...")
@@ -125,28 +116,26 @@ class ElementWorkflowPanel(WorkflowPanel):
             "review_context": self.review_context,
             "element_reference_path": self.element_reference_path,
             "element_description": self.element_description,
-            "background_color": self.background_color,
         }
 
     def deserialize(self, d: dict) -> None:
         super().deserialize(d)
         self.element_reference_path = d.get("element_reference_path")
         self.element_description = d.get("element_description", "")
-        self.background_color = d.get("background_color", "Magenta")
 
     # get_ui_outputs() and get_ui_restore_values() inherited from WorkflowPanel —
     # they include prompt_box, failed_gallery, output_gallery, review_chatbot,
     # image_model_dropdown, draft_model_dropdown, draft_aspect_ratio_dropdown.
 
     def get_prompt_tab_inputs(self) -> List:
-        return [self.element_reference, self.element_desc_box, self.element_bg_radio]
+        return [self.element_reference, self.element_desc_box]
 
     # ── render hooks ─────────────────────────────────────────────────────
 
     def render_prompt_tab_content(self) -> None:
         gr.Markdown(
             "Generate a first-person perspective element (hair fringe, arm, shoulder, etc.) "
-            "isolated against a chroma background — ready to warp and composite in GIMP."
+            "isolated on a transparent background — ready to warp and composite in GIMP."
         )
         with gr.Row():
             self.element_reference = gr.Image(
@@ -155,21 +144,14 @@ class ElementWorkflowPanel(WorkflowPanel):
                 sources=["upload"],
                 height=220,
             )
-            with gr.Column():
-                self.element_desc_box = gr.Textbox(
-                    label="Element Description",
-                    lines=5,
-                    placeholder=(
-                        "e.g. Short straight square dark anime bob hair fringe, seen at the top and "
-                        "left-side edges of the first-person view, head slightly turned right"
-                    ),
-                )
-                self.element_bg_radio = gr.Radio(
-                    choices=["Magenta", "Chroma Green", "White"],
-                    value="Magenta",
-                    label="Background Color",
-                    info="Magenta for dark elements, Chroma Green for light/skin, White as fallback",
-                )
+            self.element_desc_box = gr.Textbox(
+                label="Element Description",
+                lines=5,
+                placeholder=(
+                    "e.g. Short straight square dark anime bob hair fringe, seen at the top and "
+                    "left-side edges of the first-person view, head slightly turned right"
+                ),
+            )
 
     def _wire_events(self) -> None:
         super()._wire_events()
