@@ -37,6 +37,13 @@ Count and order must match exactly between the two methods.
 - The authoritative history is `self.review_history` on the panel object.
 - The authoritative images are `self.generated_images` on the panel object.
 
+### review_context is session-only
+`review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.
+This forces `start_review` on the first message of every new session, rebuilding context
+from `self.generated_images`. Restoring stale `review_context` causes the LLM to review
+old images and the gallery to revert after send.
+`review_history` IS restored (for display reference), but gets overwritten by `start_review`.
+
 ### Persistent paths
 `self.generated_images` and `review_context["failed_images"]` must always contain
 paths that survive a program restart. Use paths from `_save_images_permanently()` output
