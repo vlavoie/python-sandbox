@@ -7,10 +7,11 @@
 ## What was added
 `send_message` was converted from a plain function to a generator. It now yields twice:
 
-1. **Immediately** — appends the user's message to the current chatbot history and clears
-   the input box. The gallery is unchanged at this point.
-2. **After the API call** — yields the full history including the assistant response (or an
-   error message appended to prior history on failure).
+1. **Immediately** — appends the user's message plus an `"..."` placeholder assistant bubble
+   to the chatbot history and clears the input box. This replaces the Gradio spinner (which
+   disappears on the first yield) with an explicit in-chat loading indicator.
+2. **After the API call** — yields the full history with the real assistant response (or an
+   error message), replacing the placeholder.
 
 The input box is cleared on the first yield so the UI feels responsive regardless of API latency.
 
