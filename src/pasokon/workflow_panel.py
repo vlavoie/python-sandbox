@@ -165,10 +165,7 @@ class WorkflowPanel(ABC):
         """gr.update() values matching get_ui_outputs() — override in subclass."""
         ps = self.app.project_state
         is_aurora = ps.image_model == "grok-imagine-image-2.0"
-        review_images = (
-            self.review_context.get("failed_images") or self.generated_images
-            if self.review_context else self.generated_images or []
-        )
+        review_images = self.generated_images or []
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html(review_images)),
