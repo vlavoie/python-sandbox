@@ -79,6 +79,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-7.md` — gr.Image without image_mode=None strips PNG alpha
 - `issues/ISSUE-8.md` — start_review failure silently wiped chatbot and gallery
 - `issues/ISSUE-9.md` — review chatbot cleared on every image generation (gr.update(value=[]) in _generate_images_for_ui)
+- `issues/ISSUE-10.md` — start_review called on first post-restart message, wiping history (review_context empty ≠ fresh start)
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

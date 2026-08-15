@@ -582,10 +582,22 @@ class WorkflowPanel(ABC):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
-            if not self.review_history or not self.review_context:
+
+            # After a session restart, review_context is cleared but review_history
+            # is restored from disk. Rebuild context silently so we can continue
+            # the existing conversation without wiping history.
+            if self.review_history and not self.review_context:
+                images = list(self.generated_images or [])
+                if not images:
+                    err = "❌ No images available — regenerate images to continue review."
+                    return prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
+                ctx = self.build_review_context(images)
+                ctx["user_initial_comment"] = ""
+                self.review_context = ctx
+
+            if not self.review_history:
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
-                    # start_review failed — preserve display, show error in chat
                     err = result[1] or "❌ Could not start review. Re-generate images first."
                     return prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
                 gallery_html = render_gallery_html(result[2])
