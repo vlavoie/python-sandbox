@@ -1,0 +1,548 @@
+"""WorkflowPanel: reusable Generate Prompt → Generate Images → Review component."""
+
+import httpx
+import io
+import tempfile
+from abc import ABC, abstractmethod
+from datetime import datetime
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
+
+import gradio as gr
+from PIL import Image
+
+from .gallery_widget import render_gallery_html
+from .grok_client import GrokClient
+
+
+class WorkflowPanel(ABC):
+    """
+    Reusable Gradio component that provides the three-step workflow:
+    Generate Prompt → Generate Images → Review & Correct.
+
+    Subclasses override:
+      - panel_id         (property) — unique prefix for Gradio element IDs
+      - do_generate_prompt(*inputs) — generator; yields (prompt, tabs_upd, chatbot_upd, btn_upd)
+      - get_review_skill()          — review skill content (may prepend mode prefix)
+      - build_review_context(images) — builds the review context dict
+
+    Optional overrides:
+      - render_prompt_tab_content()      — add inputs above the prompt box
+      - render_images_tab_extra_controls() — add controls above the sliders
+      - get_prompt_tab_inputs()          — list of components fed into do_generate_prompt
+      - get_reference_image_path()       — path to IMAGE_0
+      - get_additional_images_for_generation() — extra images for image gen
+      - get_output_subdir()              — subdir under project/iteration folder
+      - get_ui_outputs()                 — components for project load/restore
+      - get_ui_restore_values()          — gr.update() values matching get_ui_outputs()
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+        # Per-panel persistent state
+        self.current_prompt: str = ""
+        self.generated_images: List[str] = []
+        self.iteration_count: int = 0
+        self.review_history: List = []
+        self.review_context: dict = {}
+
+        # Gradio component refs — populated by render()
+        self.panel_tabs = None
+        self.prompt_box = None
+        self.output_gallery = None
+        self.failed_gallery = None
+        self.review_chatbot = None
+        self.review_input = None
+        self._gen_prompt_btn = None
+        self._gen_images_btn = None
+        self._send_btn = None
+        self._extract_btn = None
+        self._failed_upload = None
+        self._num_images_slider = None
+        self._aspect_ratio_dropdown = None
+        self._draft_mode_radio = None
+
+    # ── abstract interface ────────────────────────────────────────────────
+
+    @property
+    @abstractmethod
+    def panel_id(self) -> str:
+        """Unique string prefix for all Gradio element IDs in this panel."""
+
+    @abstractmethod
+    def do_generate_prompt(self, *inputs):
+        """
+        Generator function for prompt generation.
+        Yields tuples of (prompt_text, tabs_update, chatbot_update, btn_update).
+        """
+
+    @abstractmethod
+    def get_review_skill(self) -> str:
+        """Return the review skill content (with any mode-specific prefix prepended)."""
+
+    @abstractmethod
+    def build_review_context(self, images_to_review: List[str]) -> dict:
+        """
+        Return a review context dict with at least:
+          failed_images, original_prompt, scene_description,
+          reference_image, additional_images, review_mode
+        The caller appends user_initial_comment.
+        """
+
+    # ── optional hooks ────────────────────────────────────────────────────
+
+    def render_prompt_tab_content(self) -> None:
+        """Add subclass-specific inputs above the shared prompt box."""
+
+    def render_images_tab_extra_controls(self) -> None:
+        """Add subclass-specific controls above the shared image gen sliders."""
+
+    def get_prompt_tab_inputs(self) -> List:
+        """Gradio components passed as inputs to do_generate_prompt."""
+        return []
+
+    def get_reference_image_path(self) -> Optional[str]:
+        return None
+
+    def get_additional_images_for_generation(self) -> Optional[List[str]]:
+        return None
+
+    def get_output_subdir(self) -> str:
+        return ""
+
+    def get_ui_outputs(self) -> List:
+        """Components list for project load/restore outputs — override in subclass."""
+        return [self.prompt_box, self.failed_gallery, self.output_gallery, self.review_chatbot]
+
+    def get_ui_restore_values(self) -> List:
+        """gr.update() values matching get_ui_outputs() — override in subclass."""
+        return [
+            gr.update(value=self.current_prompt),
+            gr.update(value=render_gallery_html([])),
+            gr.update(value=render_gallery_html(self.generated_images or [])),
+            gr.update(value=self.review_history),
+        ]
+
+    # ── image generation ─────────────────────────────────────────────────
+
+    def _save_images_permanently(
+        self, image_data_list: List[bytes], prompt: str, iteration: int, aspect_ratio: str
+    ) -> Path:
+        ps = self.app.project_state
+        base_dir = ps.output_dir / ps.project_name
+        if self.get_output_subdir():
+            base_dir = base_dir / self.get_output_subdir()
+        base_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        batch_dir = base_dir / f"{timestamp}_iteration-{iteration}"
+        batch_dir.mkdir(exist_ok=True)
+        for i, img_data in enumerate(image_data_list, 1):
+            img = Image.open(io.BytesIO(img_data))
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            img.save(batch_dir / f"image_{i}.png", "PNG", optimize=True)
+        with open(batch_dir / "prompt.txt", "w", encoding="utf-8") as fh:
+            fh.write(
+                f"Project: {ps.project_name}\nIteration: {iteration}\n"
+                f"Aspect Ratio: {aspect_ratio}\n\n{'='*60}\nPROMPT:\n{'='*60}\n\n{prompt}"
+            )
+        return batch_dir
+
+    def generate_images_batch(
+        self,
+        prompt: str,
+        num_images: int = 3,
+        aspect_ratio: str = "16:9",
+        model_override: str = None,
+        progress_callback=None,
+    ) -> Tuple[str, List, List]:
+        client = self.app.client
+        if not client:
+            return "❌ Configure API key first.", [], []
+        if not prompt.strip():
+            return "❌ Provide a prompt.", [], []
+        ref = self.get_reference_image_path()
+        if not ref:
+            return "❌ No reference image.", [], []
+        try:
+            image_data_list = client.generate_images(
+                prompt=prompt,
+                reference_image=ref,
+                num_images=num_images,
+                additional_images=self.get_additional_images_for_generation(),
+                aspect_ratio=aspect_ratio,
+                model=model_override,
+                progress_callback=progress_callback,
+            )
+            if not image_data_list:
+                return "❌ No images generated.", [], []
+
+            saved_dir = self._save_images_permanently(
+                image_data_list, prompt, self.iteration_count, aspect_ratio
+            )
+            images = []
+            for img_data in image_data_list:
+                img = Image.open(io.BytesIO(img_data))
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGBA")
+                tf = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                img.save(tf.name, "PNG", optimize=True)
+                tf.close()
+                images.append(tf.name)
+
+            self.iteration_count += 1
+            self.generated_images = images
+            self.current_prompt = prompt
+
+            ps = self.app.project_state
+            is_partial = len(images) < num_images
+            status = (
+                f"⚠️ Partial: {len(images)}/{num_images} images (Iteration {self.iteration_count})\n"
+                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
+                if is_partial else
+                f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
+                f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
+            )
+            ps.save_project_state()
+            return status, images, images
+
+        except Exception as e:
+            return f"❌ Error: {str(e)}", [], []
+
+    def _generate_images_for_ui(
+        self, prompt, num_images, aspect_ratio, draft_mode, progress=gr.Progress()
+    ):
+        try:
+            def on_done(c, t):
+                progress(c / t, desc=f"Image {c}/{t} done...")
+
+            ps = self.app.project_state
+            if draft_mode == "Draft":
+                progress(0, desc=f"Draft ({ps.draft_image_model}, {ps.draft_aspect_ratio})...")
+                _, images, _ = self.generate_images_batch(
+                    prompt, num_images,
+                    aspect_ratio=ps.draft_aspect_ratio,
+                    model_override=ps.draft_image_model,
+                    progress_callback=on_done,
+                )
+            else:
+                progress(0, desc=f"Generating {num_images} image(s)...")
+                _, images, _ = self.generate_images_batch(
+                    prompt, num_images, aspect_ratio, progress_callback=on_done
+                )
+
+            if not images:
+                progress(1.0, desc="No images returned")
+                return render_gallery_html(self.generated_images), gr.update(), gr.update()
+
+            if self.review_context:
+                self.review_context["failed_images"] = images
+
+            progress(1.0, desc="Done")
+            return render_gallery_html(images), render_gallery_html([]), gr.update()
+
+        except Exception:
+            progress(1.0, desc="Failed")
+            return render_gallery_html(self.generated_images), gr.update(), gr.update()
+
+    # ── review ────────────────────────────────────────────────────────────
+
+    def start_review(
+        self, user_comment: str, uploaded_files=None
+    ) -> Tuple[List, str, List]:
+        client = self.app.client
+        if not client:
+            return [], "❌ Configure API key first.", []
+
+        ps = self.app.project_state
+        images_to_review = []
+        if uploaded_files:
+            for f in uploaded_files:
+                if f is not None:
+                    p = ps.save_uploaded_file(f)
+                    if p:
+                        images_to_review.append(p)
+        elif self.generated_images:
+            images_to_review = list(self.generated_images)
+
+        if not images_to_review:
+            return [], "❌ No images to review.", []
+
+        try:
+            user_display = user_comment.strip() or "Review these"
+            ctx = self.build_review_context(images_to_review)
+            ctx["user_initial_comment"] = user_display
+            self.review_context = ctx
+
+            initial_review = client.review_images(
+                failed_images=images_to_review,
+                original_prompt=self.current_prompt,
+                scene_description=ctx.get("scene_description", ""),
+                reference_image=ctx.get("reference_image", ""),
+                skill_content=self.get_review_skill(),
+                additional_images=ctx.get("additional_images"),
+                user_comment=user_display,
+                review_mode=ctx.get("review_mode", "phase1"),
+            )
+
+            self.review_history = [
+                {"role": "user", "content": user_display},
+                {"role": "assistant", "content": initial_review},
+            ]
+
+            mode = ctx.get("review_mode", "phase1")
+            mode_label = "Phase 2 Enhancement" if mode == "phase2" else "Phase 1"
+            add_info = ctx.get("mode_info", "")
+            instructions = (
+                f"✅ {mode_label} Review started!\n\n"
+                f"📸 {len(images_to_review)} image(s) being analyzed\n"
+                f"🗂 <IMAGE_0> = Character reference (always){add_info}\n"
+                f"💬 Refer to images as 'image 1', 'image 2', etc."
+            )
+            return self.review_history, instructions, images_to_review
+
+        except Exception as e:
+            return [], f"❌ Error during review: {str(e)}", []
+
+    def continue_review(self, user_message: str, history: List) -> Tuple[List, str]:
+        client = self.app.client
+        if not client:
+            return history, "❌ Client not initialized"
+        if not user_message.strip():
+            return history, ""
+
+        try:
+            messages = [{"role": "system", "content": self.get_review_skill()}]
+
+            if self.review_context:
+                content = []
+                ref = self.review_context.get("reference_image")
+                if ref:
+                    content.append({"type": "text", "text": "Character reference (IMAGE_0):"})
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ref)}"},
+                    })
+
+                review_mode = self.review_context.get("review_mode", "phase1")
+                for idx, img_path in enumerate(self.review_context.get("additional_images") or [], 1):
+                    label = (
+                        "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
+                        if review_mode == "phase2" and idx == 1
+                        else f"Additional reference (IMAGE_{idx}):"
+                    )
+                    content.append({"type": "text", "text": label})
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(img_path)}"},
+                    })
+
+                for i, ip in enumerate(self.review_context.get("failed_images", []), 1):
+                    content.append({"type": "text", "text": f"Image {i}:"})
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ip)}"},
+                    })
+
+                content.append({
+                    "type": "text",
+                    "text": f"Original prompt:\n```\n{self.review_context.get('original_prompt', '')}\n```",
+                })
+                content.append({
+                    "type": "text",
+                    "text": f"Scene description:\n{self.review_context.get('scene_description', '')}",
+                })
+                if ic := self.review_context.get("user_initial_comment", ""):
+                    content.append({"type": "text", "text": f"User's initial feedback:\n{ic}"})
+
+                messages.append({"role": "user", "content": content})
+
+            skip_first_user = True
+            for msg in history:
+                if skip_first_user and msg["role"] == "user":
+                    skip_first_user = False
+                    continue
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+            messages.append({"role": "user", "content": user_message})
+
+            with httpx.Client(timeout=120.0) as hc:
+                resp = hc.post(
+                    f"{client.base_url}/chat/completions",
+                    headers=client.headers,
+                    json={"model": client.chat_model, "messages": messages},
+                )
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as e:
+                    try:
+                        api_msg = e.response.json().get("error", {}).get("message", "")
+                        if any(k in api_msg.lower() for k in ("content", "policy", "moderation", "safety")):
+                            raise Exception("Warning: No response returned")
+                    except Exception as inner:
+                        if "Warning:" in str(inner):
+                            raise
+                    raise
+                res = resp.json()
+                ar = res["choices"][0]["message"]["content"]
+                if not ar:
+                    raise Exception("Warning: No response returned")
+
+            new_history = history + [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": ar},
+            ]
+            self.review_history = new_history
+            return new_history, ""
+
+        except Exception as e:
+            return history, f"❌ Error: {str(e)}"
+
+    def extract_prompt(self, history: List) -> Tuple[str, Any]:
+        if not history:
+            return "", gr.update()
+        for msg in reversed(history):
+            if msg["role"] == "assistant" and msg["content"]:
+                cleaned = GrokClient._clean_prompt_text(msg["content"])
+                if cleaned:
+                    return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
+        return "", gr.update()
+
+    # ── persistence ───────────────────────────────────────────────────────
+
+    def serialize(self, project_dir: "Path") -> dict:
+        """
+        Return a JSON-serializable state dict for this panel.
+        Override in subclasses that own files — copy those files into
+        project_dir and store the stable paths in the returned dict.
+        The base implementation just captures in-memory state.
+        """
+        return {
+            "current_prompt": self.current_prompt,
+            "generated_images": self.generated_images,
+            "iteration_count": self.iteration_count,
+            "review_history": self.review_history,
+            "review_context": self.review_context,
+        }
+
+    def deserialize(self, d: dict) -> None:
+        """Restore panel state from a previously serialized dict."""
+        self.current_prompt = d.get("current_prompt", "")
+        self.generated_images = d.get("generated_images", [])
+        self.iteration_count = d.get("iteration_count", 0)
+        self.review_history = d.get("review_history", [])
+        self.review_context = d.get("review_context", {})
+
+    # ── UI render ─────────────────────────────────────────────────────────
+
+    def render(self) -> None:
+        """Build the inner three-tab UI within the current Gradio Blocks context."""
+        with gr.Tabs(elem_id=f"{self.panel_id}_tabs") as self.panel_tabs:
+            with gr.Tab("📝 Generate Prompt", id=f"{self.panel_id}_gen_prompt"):
+                self.render_prompt_tab_content()
+                self.prompt_box = gr.Textbox(
+                    label="Prompt (edit if needed)",
+                    lines=10,
+                    max_lines=10,
+                    placeholder="Generated prompt will appear here...",
+                )
+                self._gen_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
+
+            with gr.Tab("🖼️ Generate Images", id=f"{self.panel_id}_gen_images"):
+                self.render_images_tab_extra_controls()
+                with gr.Row():
+                    self._num_images_slider = gr.Slider(
+                        minimum=1, maximum=10, value=3, step=1, label="Number of Images"
+                    )
+                    self._aspect_ratio_dropdown = gr.Dropdown(
+                        choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
+                        value="16:9",
+                        label="Aspect Ratio",
+                        info="Ignored in Draft mode",
+                    )
+                    self._draft_mode_radio = gr.Radio(
+                        choices=["Production", "Draft"],
+                        value="Production",
+                        label="Mode",
+                        info="Draft uses the draft model and draft ratio from above",
+                    )
+                self._gen_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
+                self.output_gallery = gr.HTML()
+
+            with gr.Tab("🔍 Review & Correct", id=f"{self.panel_id}_review"):
+                with gr.Row():
+                    self._failed_upload = gr.File(
+                        label="Upload specific images to review (leave empty to use generated images)",
+                        file_count="multiple",
+                        type="filepath",
+                    )
+                self.review_chatbot = gr.Chatbot(
+                    label="Review Conversation",
+                    height=500,
+                    show_label=False,
+                    bubble_full_width=False,
+                    type="messages",
+                )
+                with gr.Row(equal_height=True):
+                    self.review_input = gr.Textbox(
+                        placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
+                        lines=1,
+                        max_lines=4,
+                        scale=10,
+                        show_label=False,
+                        container=False,
+                    )
+                    self._send_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
+                self.failed_gallery = gr.HTML()
+                gr.Markdown("---")
+                gr.Markdown("**When satisfied with the conversation:**")
+                self._extract_btn = gr.Button(
+                    "📤 Extract Final Prompt & Send to Generation Tab", variant="primary"
+                )
+
+        self._wire_events()
+
+    def _wire_events(self) -> None:
+        """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
+        self._gen_prompt_btn.click(
+            fn=self.do_generate_prompt,
+            inputs=self.get_prompt_tab_inputs(),
+            outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
+        )
+
+        self._gen_images_btn.click(
+            fn=self._generate_images_for_ui,
+            inputs=[
+                self.prompt_box,
+                self._num_images_slider,
+                self._aspect_ratio_dropdown,
+                self._draft_mode_radio,
+            ],
+            outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot],
+        )
+
+        def send_message(msg, history, uploaded, current_gallery):
+            msg = (msg or "").strip() or "Review these"
+            if not history or not self.review_context:
+                result = self.start_review(msg, uploaded)
+                return result[0], "", render_gallery_html(result[2])
+            else:
+                result = self.continue_review(msg, history)
+                return result[0], "", current_gallery
+
+        self._send_btn.click(
+            fn=send_message,
+            inputs=[self.review_input, self.review_chatbot, self._failed_upload, self.failed_gallery],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
+        )
+        self.review_input.submit(
+            fn=send_message,
+            inputs=[self.review_input, self.review_chatbot, self._failed_upload, self.failed_gallery],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
+        )
+        self._extract_btn.click(
+            fn=self.extract_prompt,
+            inputs=[self.review_chatbot],
+            outputs=[self.prompt_box, self.panel_tabs],
+        )

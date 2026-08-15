@@ -1,804 +1,261 @@
 """Gradio application for FPV POV image generation workflow."""
 
+import os
+import sys
+from typing import List, Optional, Tuple
+
 import gradio as gr
 from pathlib import Path
-from typing import Optional, List, Tuple, Any
-import tempfile
-import shutil
-from PIL import Image
-import io
-import os
-import json
-from datetime import datetime
-import sys
-from datetime import datetime
 from dotenv import load_dotenv
 
 from .grok_client import GrokClient
-from .review_handler import ReviewHandler
-from .gallery_widget import render_gallery_html
-
+from .project_state import ProjectState
+from .fpv_workflow import FPVWorkflowPanel
+from .element_workflow import ElementWorkflowPanel
 _ASSETS = Path(__file__).parent
 _GALLERY_CSS = (_ASSETS / "gallery.css").read_text(encoding="utf-8")
 _GALLERY_JS  = (_ASSETS / "gallery.js").read_text(encoding="utf-8")
 
-# System-font theme — no Google Fonts, VS Code-style stack, larger base size
 _THEME = gr.themes.Soft(
-    font=[
-        "ui-sans-serif", "system-ui", "Segoe UI",
-        "Roboto", "Helvetica Neue", "Arial", "sans-serif",
-    ],
-    font_mono=[
-        "ui-monospace", "Cascadia Code", "Consolas",
-        "Fira Code", "Droid Sans Mono", "monospace",
-    ],
+    font=["ui-sans-serif", "system-ui", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+    font_mono=["ui-monospace", "Cascadia Code", "Consolas", "Fira Code", "Droid Sans Mono", "monospace"],
     text_size=gr.themes.sizes.text_lg,
 )
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Force UTF-8 encoding on Windows
-if sys.platform == 'win32':
-    import locale
-    # Set environment variable for Python UTF-8 mode
-    os.environ.setdefault('PYTHONUTF8', '1')
+if sys.platform == "win32":
+    os.environ.setdefault("PYTHONUTF8", "1")
 
 
-class FPVPOVApp(ReviewHandler):
+class FPVPOVApp:
     """Gradio app for automating FPV POV image generation."""
 
     def __init__(self):
-        """Initialize the app."""
-        super().__init__()
+        self.client: Optional[GrokClient] = None
+        self.available_chat_models: List[str] = []
+        self.available_image_models: List[str] = []
 
-        # Model lists
-        self.client = None
-        self.available_chat_models = []
-        self.available_image_models = []
-        self.all_models = []
+        self.project_state = ProjectState()
+        self.fpv_panel = FPVWorkflowPanel(self)
+        self.element_panel = ElementWorkflowPanel(self)
 
-        # Try to auto-load the last project
+        self.project_state.register_panel("fpv", self.fpv_panel)
+        self.project_state.register_panel("element", self.element_panel)
+
+        # Auto-load last project
         try:
-            load_results = self.load_project_state()
-            load_msg = load_results[0]  # First element is the status message
-            if "Loaded project" in load_msg:
-                print(f"\n{load_msg}\n")
+            status, _ = self.project_state.load_project_state()
+            if "Loaded project" in status:
+                print(f"\n{status}\n")
         except Exception as e:
             print(f"Note: Could not auto-load last project: {e}")
-    
+
+    # ── client / model management ─────────────────────────────────────────
+
     def initialize_client(self, api_key: str) -> str:
-        """Initialize the Grok client with API key."""
         try:
             self.client = GrokClient(api_key=api_key)
-            # Apply saved model preferences from project state
-            self.client.chat_model = self.chat_model
-            self.client.image_model = self.image_model
+            self.client.chat_model = self.project_state.chat_model
+            self.client.image_model = self.project_state.image_model
             self.fetch_models()
             return "✅ API key configured successfully!"
         except Exception as e:
             return f"❌ Error: {str(e)}"
-    
+
     def fetch_models(self) -> Tuple[List[str], List[str]]:
-        """Fetch available models from the API and categorize them.
-        
-        Returns:
-            Tuple of (chat_models, image_models)
-        """
         if not self.client:
             return [], []
-        
         try:
-            models_data = self.client.list_models()
-            
-            if "data" in models_data:
-                self.all_models = []
-                chat_models = []
-                image_models = []
-                
-                for model in models_data.get("data", []):
-                    if isinstance(model, dict) and "id" in model:
-                        model_id = model["id"]
-                        self.all_models.append(model_id)
-                        
-                        # Categorize models
-                        # Image models: grok-imagine-image variants (but NOT video)
-                        if ("imagine" in model_id.lower() or "image" in model_id.lower()) and "video" not in model_id.lower():
-                            image_models.append(model_id)
-                        # Chat models: everything else that's not image/video
-                        elif "video" not in model_id.lower() and "imagine" not in model_id.lower():
-                            chat_models.append(model_id)
-                
-                self.available_chat_models = chat_models if chat_models else ["grok-4.20"]
-                self.available_image_models = image_models if image_models else ["grok-imagine-image-2.0"]
-                
-                print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
-                print(f"   Image models: {', '.join(image_models[:5])}{'...' if len(image_models) > 5 else ''}")
-                return chat_models, image_models
-            else:
-                # Fallback to defaults
-                self.available_chat_models = ["grok-4.20"]
-                self.available_image_models = ["grok-imagine-image-2.0"]
-                return self.available_chat_models, self.available_image_models
-                
+            data = self.client.list_models()
+            if "data" not in data:
+                raise ValueError("No data in response")
+            chat_models, image_models = [], []
+            for m in data["data"]:
+                if not isinstance(m, dict) or "id" not in m:
+                    continue
+                mid = m["id"]
+                if "video" in mid.lower():
+                    continue
+                if "imagine" in mid.lower() or "image" in mid.lower():
+                    image_models.append(mid)
+                else:
+                    chat_models.append(mid)
+            self.available_chat_models = chat_models or ["grok-4.20"]
+            self.available_image_models = image_models or ["grok-imagine-image-2.0"]
+            return self.available_chat_models, self.available_image_models
         except Exception as e:
             print(f"⚠️ Could not fetch models: {e}")
-            # Fallback to defaults
             self.available_chat_models = ["grok-4.20"]
             self.available_image_models = ["grok-imagine-image-2.0"]
             return self.available_chat_models, self.available_image_models
-    
+
     def update_chat_model(self, model_name: str) -> None:
-        """Update the chat model used by the client."""
-        self.chat_model = model_name
+        self.project_state.chat_model = model_name
         if self.client:
             self.client.chat_model = model_name
-        self.save_project_state()
+        self.project_state.save_project_state()
 
     def update_image_model(self, model_name: str) -> None:
-        """Update the image model used by the client."""
-        self.image_model = model_name
+        self.project_state.image_model = model_name
         if self.client:
             self.client.image_model = model_name
-        self.save_project_state()
+        self.project_state.save_project_state()
 
     def update_draft_image_model(self, model_name: str) -> None:
-        self.draft_image_model = model_name
-        self.save_project_state()
+        self.project_state.draft_image_model = model_name
+        self.project_state.save_project_state()
 
     def update_draft_aspect_ratio(self, ratio: str) -> None:
-        self.draft_aspect_ratio = ratio
-        self.save_project_state()
-    
-    def generate_initial_prompt(
-        self,
-        reference_image,
-        scene_description: str,
-        additional_images: Optional[List] = None,
-        greenzone_image=None,
-        progress=gr.Progress()
-    ):
-        """Generate a prompt. Phase 2 mode activates automatically when a greenzone image is provided."""
-        _btn_reset = gr.update(value="🎯 Generate Prompt", interactive=True)
-        _btn_loading = gr.update(value="⏳ Generating prompt...", interactive=False)
+        self.project_state.draft_aspect_ratio = ratio
+        self.project_state.save_project_state()
 
-        if not self.client:
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
-            return
+    # ── UI wrappers for project load/set ──────────────────────────────────
 
-        if not reference_image:
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
-            return
+    def _build_project_outputs(self, status: str, display: str) -> tuple:
+        """Combine app-level + FPV panel + chat model values into OUTPUTS_PROJECT tuple."""
+        return (
+            status,
+            display,
+            *self.fpv_panel.get_ui_restore_values(),
+            gr.update(value=self.project_state.chat_model),
+        )
 
-        if not scene_description.strip():
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
-            return
+    def _load_project_for_ui(self, project_name=None) -> tuple:
+        status, display = self.project_state.load_project_state(project_name)
+        return self._build_project_outputs(status, display)
 
-        is_phase2 = greenzone_image is not None
+    def _set_project_for_ui(self, project_name: str) -> tuple:
+        status, display = self.project_state.set_project_name(project_name)
+        return self._build_project_outputs(status, display)
 
-        # Generating a new prompt starts a fresh iteration; old review is no longer relevant.
-        self.phase1_review_history = []
-        self.phase1_review_context = {}
-
-        # Show loading state on the button immediately so there is visual feedback from click.
-        yield gr.update(), gr.update(), gr.update(), _btn_loading
-
-        try:
-            progress(0, desc="Preparing images...")
-            self.reference_image_path = self.save_uploaded_file(reference_image)
-
-            self.additional_images_paths = []
-            if additional_images:
-                for img in additional_images:
-                    if img is not None:
-                        path = self.save_uploaded_file(img)
-                        if path:
-                            self.additional_images_paths.append(path)
-
-            if is_phase2:
-                self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
-                self.current_phase2_description = scene_description
-                self.review_mode = "phase2"
-
-                full_scene = f"""Phase 2 Enhancement - Green Zone Addition:
-{scene_description}
-
-Context:
-- <IMAGE_0> is the character reference for style/appearance matching
-- <IMAGE_1> is the base image with green/pink zones marking where to add elements
-- Only add elements inside the marked zones on <IMAGE_1>
-- Completely erase all green/pink paint afterward
-- Lock appearance/style to <IMAGE_0>
-- Use <IMAGE_1> as the spatial base to modify"""
-
-                self.current_scene = full_scene
-
-                scene_context_section = ""
-                if self.phase1_scene_description:
-                    scene_context_section = f"""
-PHASE 1 SCENE CONTEXT — what IMAGE_1 shows (use this to understand the scene):
-{self.phase1_scene_description}
-
-"""
-                previous_prompt_section = ""
-                if self.current_prompt and self.review_mode == "phase2":
-                    previous_prompt_section = f"""
-PREVIOUS PHASE 2 PROMPT — iterate from this, refining based on the updated zone description above:
-{self.current_prompt}
-
-"""
-                phase2_prefix = f"""PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
-
-You are generating a Grok Imagine prompt for Phase 2: a surgical local addition to an existing base image.
-
-AURORA MODEL RULES — apply these before generating anything:
-- Aurora ignores negative language ("not", "no", "never", "forbidden"). Do not use it.
-- Aurora's first 20–30 tokens dominate the output. Front-load the most critical instruction.
-- Repetition dilutes, not emphasizes. State each element once, precisely, early.
-- Write spatially: describe what appears where in the frame.
-{scene_context_section}{previous_prompt_section}FIXED IMAGE ASSIGNMENT:
-- <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color lock to this image
-- <IMAGE_1> = GREEN-MARKED BASE — unchanged spatial base; only the green-painted zones change
-
-PROMPT STRUCTURE — generate in this exact order:
-1. Open with: "Starting from IMAGE_1 as the unchanged spatial and compositional base, [brief description of what appears in the green-zone areas]."
-2. Describe the scene from IMAGE_1 briefly so Aurora understands the visual context.
-3. Spatial description of the addition: where in the frame, color/texture/style matching IMAGE_0.
-4. Base statement (once): "Everything outside the green-marked zones remains identical to IMAGE_1."
-5. Paint removal (once): "Green paint fully removed in the final image."
-6. Style anchor: "[Element] color, texture, and style matches IMAGE_0."
-
-For hair/fringe additions at the frame edges, describe as a frame-border detail seen from inside the hairline:
-"The [left/right/top] frame borders reveal a thin strip of the viewer's own [style] hair — the camera is positioned at eye level within the hairline, making the [bob/fringe/etc.] naturally visible as a narrow frame-border detail at the absolute [left/right] edge, [X]% wide on the left and [Y]% on the right."
-This framing avoids characters-at-the-edges misinterpretation. Do NOT use "strands entering the frame" — describe it as a static frame-border detail.
-
-If a solid-color exclusion zone is present (e.g. bright pink): "The [color] area in IMAGE_1 remains exactly as shown."
-
-Fill every sentence with specific visual content — materials, lighting quality, colors, textures, atmosphere. Aurora hallucinates into gaps; describe every visible element as completely as possible. No ban lists. No repetition. No upper limit on specificity.
-
----
-
-"""
-                progress(0.5, desc="Waiting for Grok API (~30s)...")
-                self.current_prompt = self.client.generate_prompt(
-                    reference_image=self.reference_image_path,       # IMAGE_0 = character
-                    scene_description=full_scene,
-                    skill_content=phase2_prefix + self.prompt_skill,
-                    additional_images=[self.greenzone_image_path]    # IMAGE_1 = greenzone
-                )
-            else:
-                self.greenzone_image_path = None
-                self.review_mode = "phase1"
-                self.current_scene = scene_description
-                self.phase1_scene_description = scene_description
-                progress(0.5, desc="Waiting for Grok API (~30s)...")
-                self.current_prompt = self.client.generate_prompt(
-                    reference_image=self.reference_image_path,
-                    scene_description=scene_description,
-                    skill_content=self.prompt_skill,
-                    additional_images=self.additional_images_paths if self.additional_images_paths else None
-                )
-
-            self.save_project_state()
-            progress(1.0, desc="Done")
-            yield self.current_prompt, gr.update(selected="tab_generate_images"), gr.update(value=[]), _btn_reset
-
-        except Exception as e:
-            error_msg = str(e)
-            print(f"\n{'='*60}")
-            print(f"ERROR IN PROMPT GENERATION:")
-            print(f"{'='*60}")
-            print(error_msg)
-            print(f"{'='*60}\n")
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
-    
-    def save_images_permanently(
-        self,
-        image_data_list: List[bytes],
-        prompt: str,
-        iteration: int,
-        aspect_ratio: str
-    ) -> Path:
-        """Save generated images to permanent output directory.
-        
-        Args:
-            image_data_list: List of image data as bytes
-            prompt: The prompt used to generate images
-            iteration: Iteration number
-            aspect_ratio: Aspect ratio used
-            
-        Returns:
-            Path to the output directory
-        """
-        # Create project folder
-        project_dir = self.output_dir / self.project_name
-        project_dir.mkdir(exist_ok=True)
-        
-        # Create timestamped folder within project
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        batch_dir = project_dir / f"{timestamp}_iteration-{iteration}"
-        batch_dir.mkdir(exist_ok=True)
-        
-        # Save each image
-        for i, img_data in enumerate(image_data_list, 1):
-            img = Image.open(io.BytesIO(img_data))
-            img_path = batch_dir / f"image_{i}.png"
-            # Preserve transparency by ensuring RGBA mode for PNG
-            if img.mode in ('RGBA', 'LA', 'P'):
-                img.save(img_path, 'PNG', optimize=True)
-            elif img.mode == 'RGB':
-                img.save(img_path, 'PNG', optimize=True)
-            else:
-                # Convert to RGBA to preserve any transparency
-                img = img.convert('RGBA')
-                img.save(img_path, 'PNG', optimize=True)
-        
-        # Save prompt to text file
-        prompt_file = batch_dir / "prompt.txt"
-        with open(prompt_file, 'w', encoding='utf-8') as f:
-            f.write(f"Project: {self.project_name}\n")
-            f.write(f"Iteration: {iteration}\n")
-            f.write(f"Aspect Ratio: {aspect_ratio}\n")
-            f.write(f"Timestamp: {timestamp}\n")
-            f.write(f"\n{'='*60}\n")
-            f.write(f"PROMPT:\n")
-            f.write(f"{'='*60}\n\n")
-            f.write(prompt)
-        
-        return batch_dir
-    
-    def generate_images_batch(
-        self,
-        prompt: str,
-        num_images: int = 3,
-        aspect_ratio: str = "16:9",
-        model_override: str = None,
-        progress_callback=None
-    ) -> Tuple[str, List, List]:
-        """Generate a batch of images using Grok Imagine."""
-        if not self.client:
-            return "❌ Please configure your API key first.", [], []
-        
-        if not prompt.strip():
-            return "❌ Please provide a prompt.", [], []
-        
-        if not self.reference_image_path:
-            return "❌ No reference image available.", [], []
-        
-        try:
-            # In Phase 2 the greenzone base is IMAGE_1; additional Phase 1 characters are irrelevant.
-            if self.review_mode == "phase2":
-                effective_additional = [self.greenzone_image_path] if self.greenzone_image_path else None
-            else:
-                effective_additional = self.additional_images_paths if self.additional_images_paths else None
-
-            # Generate images
-            image_data_list = self.client.generate_images(
-                prompt=prompt,
-                reference_image=self.reference_image_path,
-                num_images=num_images,
-                additional_images=effective_additional,
-                aspect_ratio=aspect_ratio,
-                model=model_override,
-                progress_callback=progress_callback
-            )
-            
-            # Check if we got any images
-            if not image_data_list or len(image_data_list) == 0:
-                return "❌ No images were successfully generated. Check console for errors.", [], []
-            
-            # Save to permanent directory
-            saved_dir = self.save_images_permanently(
-                image_data_list=image_data_list,
-                prompt=prompt,
-                iteration=self.iteration_count,
-                aspect_ratio=aspect_ratio
-            )
-            
-            # Convert to PIL Images for display
-            images = []
-            for img_data in image_data_list:
-                img = Image.open(io.BytesIO(img_data))
-                
-                # Save to temp file for Gradio display
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                # Preserve transparency by ensuring RGBA mode for PNG
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    img.save(temp_file.name, 'PNG', optimize=True)
-                elif img.mode == 'RGB':
-                    img.save(temp_file.name, 'PNG', optimize=True)
-                else:
-                    # Convert to RGBA to preserve any transparency
-                    img = img.convert('RGBA')
-                    img.save(temp_file.name, 'PNG', optimize=True)
-                temp_file.close()
-                
-                images.append(temp_file.name)
-            
-            self.iteration_count += 1
-            self.generated_images = images
-            self.current_prompt = prompt
-
-            # Check if we got partial results
-            actual_count = len(images)
-            is_partial = actual_count < num_images
-            
-            # Build status message
-            if is_partial:
-                status_msg = (
-                    f"⚠️ Partial success: {actual_count}/{num_images} images generated (Iteration {self.iteration_count})\n"
-                    f"📁 Project: {self.project_name}\n"
-                    f"💾 Saved {actual_count} successful image(s) to: {self.project_name}/{saved_dir.name}/\n"
-                    f"⚠️ {num_images - actual_count} image(s) failed - check console for details"
-                )
-            else:
-                status_msg = (
-                    f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
-                    f"📁 Project: {self.project_name}\n"
-                    f"💾 Saved to: {self.project_name}/{saved_dir.name}/"
-                )
-            
-            # Auto-save project state
-            self.save_project_state()
-            
-            return status_msg, images, images
-            
-        except Exception as e:
-            return f"❌ Error generating images: {str(e)}", [], []
-    
-    def update_greenzone_image(self, greenzone_image) -> None:
-        """Pre-save greenzone image so Save Now works before Generate Prompt is clicked."""
-        if greenzone_image:
-            self.greenzone_image_path = self.save_uploaded_file(greenzone_image)
-        else:
-            self.greenzone_image_path = None
-
-    def update_reference_image(self, reference_image) -> None:
-        """Update the reference image path when a new image is uploaded."""
-        if reference_image:
-            self.reference_image_path = self.save_uploaded_file(reference_image)
-
-    def update_additional_images(self, additional_images) -> None:
-        """Update the additional images paths when new images are uploaded."""
-        self.additional_images_paths = []
-        if additional_images:
-            for img in additional_images:
-                if img is not None:
-                    path = self.save_uploaded_file(img)
-                    if path:
-                        self.additional_images_paths.append(path)
-    
-    # ── UI-layer wrappers: convert path lists → gallery HTML ─────────────
-
-    def _generate_images_for_ui(self, prompt, num_images, aspect_ratio, draft_mode, progress=gr.Progress()):
-        try:
-            def on_image_done(completed, total):
-                progress(completed / total, desc=f"Image {completed}/{total} done...")
-
-            if draft_mode == "Draft":
-                progress(0, desc=f"Generating {num_images} image(s) in Draft mode ({self.draft_image_model}, {self.draft_aspect_ratio})...")
-                _, images, failed = self.generate_images_batch(
-                    prompt, num_images,
-                    aspect_ratio=self.draft_aspect_ratio,
-                    model_override=self.draft_image_model,
-                    progress_callback=on_image_done
-                )
-            else:
-                progress(0, desc=f"Generating {num_images} image(s)...")
-                _, images, failed = self.generate_images_batch(
-                    prompt, num_images, aspect_ratio,
-                    progress_callback=on_image_done
-                )
-            if not images:
-                progress(1.0, desc="Warning: No images returned")
-                return render_gallery_html(self.generated_images), gr.update(), gr.update()
-            # Keep the review conversation alive but point it at the freshly generated images.
-            if self.phase1_review_context:
-                self.phase1_review_context["failed_images"] = images
-            progress(1.0, desc="Done")
-            return render_gallery_html(images), render_gallery_html(failed), gr.update()
-        except Exception:
-            progress(1.0, desc="Failed")
-            return render_gallery_html(self.generated_images), gr.update(), gr.update()
-
-    def _load_project_for_ui(self, project_name=None):
-        result = list(self.load_project_state(project_name))
-        result[3] = render_gallery_html(result[3] or [])   # failed_images_gallery slot
-        result[9] = render_gallery_html(result[9] or [])   # output_gallery slot
-        return tuple(result)
-
-    def _set_project_for_ui(self, project_name):
-        result = list(self.set_project_name(project_name))
-        result[3] = render_gallery_html(result[3] or [])
-        result[9] = render_gallery_html(result[9] or [])
-        return tuple(result)
+    # ── Gradio interface ──────────────────────────────────────────────────
 
     def create_interface(self) -> gr.Blocks:
-        """Create the Gradio interface."""
         with gr.Blocks(title="FPV POV Image Generator", theme=_THEME, css=_GALLERY_CSS, js=_GALLERY_JS) as app:
             gr.Markdown("# 🎨 FPV POV Image Generator")
             gr.Markdown("Automate your Grok-based first-person POV image generation workflow")
-            
-            # Instructions at the top
+
             with gr.Accordion("📖 Instructions", open=False):
                 gr.Markdown("""
                 ### Workflow Overview
-                
+
                 **Phase 1: Base Image Generation**
                 1. **Generate Prompt**: Upload your character reference and describe the scene
-                2. **Generate Images**: Create 3 (or more) variations using the prompt
-                3. **Review & Correct**: If images have errors, upload them for analysis and get a corrected prompt
-                4. Repeat steps 2-3 until you have a solid base image
-                
+                2. **Generate Images**: Create variations using the prompt
+                3. **Review & Correct**: If images have errors, get a corrected prompt
+
                 **Phase 2: Enhancements** (Optional)
-                - For elements that hallucinate (like hair), manually mark zones in an image editor
-                - Generate enhancement prompts for precise additions
-                
-                ### Tips
-                - You can edit any generated prompt before using it
-                - Save good intermediate results to your computer
-                - The app remembers your reference images across tabs
-                - Use Photoshop between iterations for manual corrections
-                - Start with clean bases, add complex elements later
-                
+                - Mark zones in an image editor, upload as the green-zone base image
+                - Generate surgical addition prompts
+
+                **Element Generator** — for GIMP compositing
+                - Generate isolated FPV elements against chroma backgrounds
+                - Same Generate → Review workflow as FPV
+
                 ### API Key
-                - Get your API key from x.ai
-                - Set the `XAI_API_KEY` environment variable
+                Get your key from x.ai and set `XAI_API_KEY` in your environment.
                 """)
-            
-            # Current project indicator
+
             with gr.Row():
-                current_project_display = gr.Markdown(self._get_project_display_string())
+                current_project_display = gr.Markdown(self.project_state._get_project_display_string())
                 manual_save_btn = gr.Button("💾 Save Now", scale=0, size="sm")
-            
-            # Main workflow tabs
+
             main_tabs = gr.Tabs()
             with main_tabs:
-                # Tab 1: Project Management
+                # ── Tab 1: Project Management ──────────────────────────────
                 with gr.Tab("💾 Project Management", id="tab_project"):
                     gr.Markdown("### Load & Save Projects")
                     gr.Markdown("""
-                    **Project Persistence:** Your work is automatically saved! You can close the app and resume later.
-                    
-                    Saved data includes: prompts, images, references, review mode, and more.
+                    **Project Persistence:** Your work is automatically saved.
+                    Close and reopen to resume where you left off.
                     """)
-                    
+
                     with gr.Row():
                         with gr.Column():
-                            project_name_input_dup = gr.Textbox(
+                            project_name_input = gr.Textbox(
                                 label="Project Name",
-                                value=self.project_name,
-                                placeholder="my-fpv-project"
+                                value=self.project_state.project_name,
+                                placeholder="my-fpv-project",
                             )
                             set_project_btn = gr.Button("💾 Set Project Name")
-                        
                         with gr.Column():
                             project_selector = gr.Dropdown(
                                 label="Load Existing Project",
-                                choices=self.list_projects(),
-                                value=None
+                                choices=self.project_state.list_projects(),
+                                value=None,
                             )
                             load_project_btn = gr.Button("📂 Load Selected Project")
-                    
+
                     gr.Markdown("### Model Selection")
                     with gr.Row():
                         chat_model_dropdown = gr.Dropdown(
                             choices=["grok-4.20", "grok-2-1212", "grok-2-vision-1212", "grok-beta"],
-                            value=self.chat_model,
+                            value=self.project_state.chat_model,
                             label="💬 Chat Model",
                             info="For prompt generation & review",
                             interactive=True,
-                            allow_custom_value=True
-                        )
-                        image_model_dropdown = gr.Dropdown(
-                            choices=[
-                                "grok-imagine-image-2.0",
-                                "grok-imagine-image-quality",
-                                "grok-imagine-image-pro",
-                                "grok-imagine-image"
-                            ],
-                            value=self.image_model,
-                            label="🎨 Image Model (Production)",
-                            info="For final image generation",
-                            interactive=True,
-                            allow_custom_value=True
-                        )
-
-                    gr.Markdown("### Draft Mode")
-                    with gr.Row():
-                        draft_image_model_dropdown = gr.Dropdown(
-                            choices=[
-                                "grok-imagine-image",
-                                "grok-imagine-image-2.0",
-                                "grok-imagine-image-quality",
-                                "grok-imagine-image-pro",
-                            ],
-                            value=self.draft_image_model,
-                            label="🖼️ Image Model (Draft)",
-                            info="Cheaper model used in Draft mode",
-                            interactive=True,
-                            allow_custom_value=True
-                        )
-                        draft_aspect_ratio_dropdown = gr.Dropdown(
-                            choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
-                            value=self.draft_aspect_ratio,
-                            label="📐 Aspect Ratio (Draft)",
-                            info="Smaller ratio speeds up draft generation",
-                            interactive=True,
+                            allow_custom_value=True,
                         )
 
                     project_mgmt_status = gr.Textbox(
-                        label="Project Status",
-                        interactive=False,
-                        lines=8
+                        label="Project Status", interactive=False, lines=12
                     )
 
-                # Tab 2: Generate Prompt
-                with gr.Tab("2️⃣ Generate Prompt", id="tab_generate_prompt"):
-                    gr.Markdown("### Upload reference image and describe your scene")
-                    gr.Markdown("*Upload a green-zone base image to activate Phase 2 (element addition) mode automatically.*")
+                # ── Tab 2: FPV Workflow ────────────────────────────────────
+                with gr.Tab("🎯 FPV Workflow", id="tab_fpv"):
+                    gr.Markdown("### First-Person POV image generation — Phase 1 & Phase 2")
+                    self.fpv_panel.render()
 
-                    with gr.Row():
-                        with gr.Column():
-                            reference_image = gr.Image(
-                                label="Character Reference (<IMAGE_0>)",
-                                type="filepath",
-                                image_mode=None
-                            )
-                            additional_images = gr.File(
-                                label="Additional Characters (optional, Phase 1 only — <IMAGE_1>, <IMAGE_2>…)",
-                                file_count="multiple",
-                                type="filepath"
-                            )
+                # ── Tab 3: Element Generator ───────────────────────────────
+                with gr.Tab("✨ Element Generator", id="tab_element"):
+                    gr.Markdown("### Generate isolated FPV elements for GIMP compositing")
+                    self.element_panel.render()
 
-                        with gr.Column():
-                            scene_description = gr.Textbox(
-                                label="Scene / Enhancement Description",
-                                placeholder="Phase 1: describe your scene.\nPhase 2: describe what to add in the green zones.",
-                                lines=8
-                            )
-                            greenzone_image = gr.Image(
-                                label="Green-zone Base Image (optional — triggers Phase 2, <IMAGE_1>)",
-                                type="filepath",
-                                image_mode=None
-                            )
+            # OUTPUTS_PROJECT maps to what _build_project_outputs returns:
+            # (status, display, *fpv_panel.get_ui_outputs(), chat_model_dropdown)
+            OUTPUTS_PROJECT = [
+                project_mgmt_status,
+                current_project_display,
+                *self.fpv_panel.get_ui_outputs(),
+                chat_model_dropdown,
+            ]
 
-                    generate_prompt_btn = gr.Button("🎯 Generate Prompt", variant="primary")
-                
-                # Tab 3: Image Generation
-                with gr.Tab("3️⃣ Generate Images", id="tab_generate_images"):
-                    gr.Markdown("### Generate images using the prompt")
-
-                    with gr.Row():
-                        prompt_to_use = gr.Textbox(
-                            label="Prompt (edit if needed)",
-                            lines=10,
-                            max_lines=10,
-                            placeholder="Paste or edit the prompt here..."
-                        )
-
-                    with gr.Row():
-                        num_images_slider = gr.Slider(
-                            minimum=1,
-                            maximum=10,
-                            value=3,
-                            step=1,
-                            label="Number of Images"
-                        )
-                        aspect_ratio_dropdown = gr.Dropdown(
-                            choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
-                            value="16:9",
-                            label="Aspect Ratio",
-                            info="Ignored in Draft mode (uses draft ratio from Project Management)"
-                        )
-                        draft_mode_radio = gr.Radio(
-                            choices=["Production", "Draft"],
-                            value="Production",
-                            label="Mode",
-                            info="Draft uses a cheaper model and smaller ratio"
-                        )
-
-                    with gr.Row():
-                        generate_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
-                    
-                    with gr.Row():
-                        output_gallery = gr.HTML()
-                    
-                # Tab 4: Review and Correction
-                with gr.Tab("4️⃣ Review & Correct", id="tab_review"):
-                    
-                    with gr.Row():
-                        with gr.Column():
-                            gr.Markdown("**Option: Upload specific failed images**")
-                            failed_images_upload = gr.File(
-                                label="Upload Failed Images (or leave empty to use generated images)",
-                                file_count="multiple",
-                                type="filepath"
-                            )
-                    
-                    # Chatbot interface for interactive review
-                    review_chatbot = gr.Chatbot(
-                        label="Review Conversation",
-                        height=500,
-                        show_label=False,
-                        bubble_full_width=False,
-                        type="messages",
-                    )
-
-                    with gr.Row(equal_height=True):
-                        review_user_input = gr.Textbox(
-                            placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
-                            lines=1,
-                            max_lines=4,
-                            scale=10,
-                            show_label=False,
-                            container=False,
-                            elem_id="review-input"
-                        )
-                        send_review_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
-                    
-                    # Thumbnail strip for images under review
-                    failed_images_gallery = gr.HTML()
-                    
-                    gr.Markdown("---")
-                    gr.Markdown("**When you're satisfied with the conversation:**")
-                    
-                    extract_and_send_btn = gr.Button("📤 Extract Final Prompt & Send to Generation Tab", variant="primary")
-                    
-                
-            
-            OUTPUTS_PROJECT = [project_mgmt_status, current_project_display, prompt_to_use, failed_images_gallery, reference_image, scene_description, additional_images, review_chatbot, greenzone_image, output_gallery, chat_model_dropdown, image_model_dropdown, draft_image_model_dropdown, draft_aspect_ratio_dropdown]
-
-            # Tab 1: Project Management
-            set_project_btn.click(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
-            project_name_input_dup.submit(fn=self._set_project_for_ui, inputs=[project_name_input_dup], outputs=OUTPUTS_PROJECT)
-            load_project_btn.click(fn=self._load_project_for_ui, inputs=[project_selector], outputs=OUTPUTS_PROJECT)
-            manual_save_btn.click(fn=self.save_project_state, outputs=[project_mgmt_status])
-            project_selector.focus(fn=lambda: gr.Dropdown(choices=self.list_projects()), outputs=[project_selector])
-
-            # Tab 2: Generate Prompt — reference image / additional images / greenzone pre-save on change
-            reference_image.change(fn=self.update_reference_image, inputs=[reference_image])
-            additional_images.change(fn=self.update_additional_images, inputs=[additional_images])
-            greenzone_image.change(fn=self.update_greenzone_image, inputs=[greenzone_image])
-
-            generate_prompt_btn.click(
-                fn=self.generate_initial_prompt,
-                inputs=[reference_image, scene_description, additional_images, greenzone_image],
-                outputs=[prompt_to_use, main_tabs, review_chatbot, generate_prompt_btn]
+            # Tab 1 events
+            set_project_btn.click(
+                fn=self._set_project_for_ui,
+                inputs=[project_name_input],
+                outputs=OUTPUTS_PROJECT,
+            )
+            project_name_input.submit(
+                fn=self._set_project_for_ui,
+                inputs=[project_name_input],
+                outputs=OUTPUTS_PROJECT,
+            )
+            load_project_btn.click(
+                fn=self._load_project_for_ui,
+                inputs=[project_selector],
+                outputs=OUTPUTS_PROJECT,
+            )
+            manual_save_btn.click(
+                fn=self.project_state.save_project_state,
+                outputs=[project_mgmt_status],
+            )
+            project_selector.focus(
+                fn=lambda: gr.Dropdown(choices=self.project_state.list_projects()),
+                outputs=[project_selector],
+            )
+            chat_model_dropdown.change(
+                fn=self.update_chat_model,
+                inputs=[chat_model_dropdown],
             )
 
-            # Tab 3: Generate Images
-            generate_images_btn.click(
-                fn=self._generate_images_for_ui,
-                inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown, draft_mode_radio],
-                outputs=[output_gallery, failed_images_gallery, review_chatbot]
+            # Auto-load on page load
+            app.load(
+                fn=lambda: self._load_project_for_ui(),
+                outputs=OUTPUTS_PROJECT,
             )
 
-            # Tab 4: Review & Correct
-            def send_message(msg, history, uploaded_files, current_gallery_html):
-                msg = msg.strip() or "Review these"
-                # Start fresh when there is no history OR when the review context has been
-                # cleared (e.g. a new prompt was generated), even if stale history remains.
-                if not history or not self.phase1_review_context:
-                    review_result = self.start_phase1_review(msg, uploaded_files)
-                    return review_result[0], "", render_gallery_html(review_result[2])
-                else:
-                    cont_result = self.continue_phase1_review(msg, history)
-                    return cont_result[0], "", current_gallery_html
-
-            send_review_btn.click(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
-            review_user_input.submit(fn=send_message, inputs=[review_user_input, review_chatbot, failed_images_upload, failed_images_gallery], outputs=[review_chatbot, review_user_input, failed_images_gallery])
-            extract_and_send_btn.click(fn=self.extract_prompt_from_phase1_chat, inputs=[review_chatbot], outputs=[prompt_to_use, main_tabs])
-
-            # Model selection
-            chat_model_dropdown.change(fn=self.update_chat_model, inputs=[chat_model_dropdown])
-            image_model_dropdown.change(fn=self.update_image_model, inputs=[image_model_dropdown])
-            draft_image_model_dropdown.change(fn=self.update_draft_image_model, inputs=[draft_image_model_dropdown])
-            draft_aspect_ratio_dropdown.change(fn=self.update_draft_aspect_ratio, inputs=[draft_aspect_ratio_dropdown])
-
-            # Auto-load last project on page load
-            app.load(fn=lambda: self._load_project_for_ui(), outputs=OUTPUTS_PROJECT)
-            
         return app
 
 
@@ -806,8 +263,7 @@ def launch():
     """Launch the Gradio app."""
     app = FPVPOVApp()
     interface = app.create_interface()
-    
-    # Auto-initialize if API key exists in environment
+
     existing_key = os.getenv("XAI_API_KEY")
     if existing_key:
         print("🔑 Auto-initializing with API key from environment...")
@@ -816,8 +272,7 @@ def launch():
         chat_models, image_models = app.fetch_models()
         if chat_models and image_models:
             print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
-            print(f"🎨 Default image model: grok-imagine-image-2.0")
-    
+
     interface.launch(share=False)
 
 

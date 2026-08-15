@@ -1,11 +1,11 @@
-"""Project state management and persistence for FPV POV app."""
+"""App-level project state and persistence for FPV POV app."""
 
 import json
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from PIL import Image
 
@@ -26,385 +26,286 @@ def _normalize_chat_history(history: list) -> list:
 
 
 class ProjectState:
-    """Holds all workflow state and handles persistence to disk."""
+    """
+    Holds app-level state: project identity, model preferences, skills, and
+    project persistence (save/load/list).
+
+    Per-panel state (prompts, images, review history, etc.) lives in each
+    WorkflowPanel subclass.  Panels register themselves via register_panel()
+    so save/load can reach them.
+    """
 
     def __init__(self):
-        self.current_prompt = ""
-        self.current_scene = ""
-        self.reference_image_path = None
-        self.additional_images_paths = []
-        self.generated_images = []
-        self.iteration_count = 0
         self.project_name = "untitled-project"
 
-        # Review chat histories (Tab 3 handles both Phase 1 and Phase 2 reviews)
-        self.phase1_review_history = []
-        self.phase1_review_context = {}
+        self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
+        self.output_dir.mkdir(exist_ok=True)
 
-        # Phase 2 context (for enhancement generation in Tab 4)
-        self.greenzone_image_path = None
-        self.current_phase2_description = ""
-        self.phase1_scene_description = ""  # preserved when Phase 2 overwrites current_scene
-        self.review_mode = "phase1"  # or "phase2" - controls image ordering in Tab 3
+        # Skill files
+        self.skill_dir = Path(__file__).parent.parent.parent
+        try:
+            with open(self.skill_dir / "fpv-pov-image.md", "r", encoding="utf-8", errors="replace") as f:
+                self.prompt_skill = f.read()
+            with open(self.skill_dir / "fpv-pov-review.md", "r", encoding="utf-8", errors="replace") as f:
+                self.review_skill = f.read()
+            with open(self.skill_dir / "fpv-pov-element.md", "r", encoding="utf-8", errors="replace") as f:
+                self.element_skill = f.read()
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Skill files not found. Ensure fpv-pov-image.md, fpv-pov-review.md, and "
+                f"fpv-pov-element.md are in: {self.skill_dir}"
+            ) from e
 
-        # Model preferences (persisted per project)
+        # App-level model preferences (persisted per project)
         self.chat_model = "grok-4.20"
         self.image_model = "grok-imagine-image-2.0"
         self.draft_image_model = "grok-imagine-image"
         self.draft_aspect_ratio = "1:1"
 
-        # Output directory for saved images
-        self.output_dir = Path(__file__).parent.parent.parent / "fpv-pov-outputs"
-        self.output_dir.mkdir(exist_ok=True)
+        # Registered workflow panels: name → panel instance
+        self._panels: Dict = {}
 
-        # Load skill files with explicit UTF-8 encoding
-        self.skill_dir = Path(__file__).parent.parent.parent
-        try:
-            with open(self.skill_dir / "fpv-pov-image.md", "r", encoding='utf-8', errors='replace') as f:
-                self.prompt_skill = f.read()
-            with open(self.skill_dir / "fpv-pov-review.md", "r", encoding='utf-8', errors='replace') as f:
-                self.review_skill = f.read()
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Skill files not found. Please ensure fpv-pov-image.md and fpv-pov-review.md "
-                f"are in the project root directory: {self.skill_dir}"
-            ) from e
-        except Exception as e:
-            raise Exception(f"Error loading skill files: {e}") from e
+    def register_panel(self, name: str, panel) -> None:
+        self._panels[name] = panel
 
-    def clear_state(self):
-        """Clear all project state variables."""
-        self.current_prompt = ""
-        self.current_scene = ""
-        self.reference_image_path = None
-        self.additional_images_paths = []
-        self.generated_images = []
-        self.iteration_count = 0
-        self.phase1_review_history = []
-        self.phase1_review_context = {}
-        self.greenzone_image_path = None
-        self.current_phase2_description = ""
-        self.phase1_scene_description = ""
-        self.review_mode = "phase1"
+    # ── display ───────────────────────────────────────────────────────────
 
     def _get_project_display_string(self) -> str:
-        """Generate the current project display string for the top bar."""
         return f"**📁 Current Project:** `{self.project_name}` | 💾 Auto-saves after each action"
 
+    # ── file utilities ────────────────────────────────────────────────────
+
     def save_uploaded_file(self, file) -> Optional[str]:
-        """Save an uploaded file to a temporary location."""
+        """Copy an uploaded file to a temporary location and return the path."""
         if file is None:
             return None
-
         try:
-            # Get the source path
-            if isinstance(file, str):
-                source_path = file
-            else:
-                source_path = file.name
+            source_path = file if isinstance(file, str) else file.name
+            suffix = Path(source_path).suffix.lower() or ".jpg"
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            temp_path = tf.name
+            tf.close()
 
-            # Get file extension
-            suffix = Path(source_path).suffix.lower() if Path(source_path).suffix else '.jpg'
-
-            # Create a temp file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            temp_path = temp_file.name
-            temp_file.close()
-
-            if suffix == '.png':
-                # Copy PNG directly — re-encoding through PIL can corrupt transparency
+            if suffix == ".png":
                 shutil.copy(source_path, temp_path)
-            elif suffix in ['.jpg', '.jpeg']:
+            elif suffix in (".jpg", ".jpeg"):
                 img = Image.open(source_path)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                if img.mode in ("RGBA", "LA", "P"):
+                    background = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
                     img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(temp_path, 'JPEG', quality=95, optimize=True)
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(temp_path, "JPEG", quality=95, optimize=True)
             else:
                 shutil.copy(source_path, temp_path)
-
             return temp_path
+
         except Exception as e:
             print(f"Warning: Could not save uploaded file: {e}")
-            # Fallback to simple copy
-            suffix = Path(file.name if hasattr(file, 'name') else file).suffix or '.jpg'
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             source = file if isinstance(file, str) else file.name
-            shutil.copy(source, temp_file.name)
-            temp_file.close()
-            return temp_file.name
+            suffix = Path(source).suffix or ".jpg"
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            shutil.copy(source, tf.name)
+            tf.close()
+            return tf.name
 
-    def _get_project_metadata_path(self, project_name: str = None) -> Path:
-        """Get the path to the project metadata file."""
-        proj_name = project_name or self.project_name
-        project_dir = self.output_dir / proj_name
-        return project_dir / ".project_metadata.json"
-
-    def _copy_image_to_project(self, image_path: str, image_type: str) -> str:
-        """Copy an image to the project's references directory.
-
-        Args:
-            image_path: Path to the source image
-            image_type: Type of image (e.g., 'reference', 'additional_0', 'greenzone')
-
-        Returns:
-            Path to the copied image in the project directory
-        """
+    def _copy_image_to_project(
+        self, image_path: str, image_type: str, project_dir: Path = None
+    ) -> Optional[str]:
+        """Copy an image into <project_dir>/references/. Returns the new path."""
         if not image_path or not Path(image_path).exists():
             return image_path
-
         try:
-            project_dir = self.output_dir / self.project_name
-            references_dir = project_dir / "references"
-            references_dir.mkdir(parents=True, exist_ok=True)
+            refs_dir = (project_dir or (self.output_dir / self.project_name)) / "references"
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            suffix = Path(image_path).suffix.lower() or ".jpg"
+            dest = refs_dir / f"{image_type}{suffix}"
 
-            # Get file extension and determine format
-            suffix = Path(image_path).suffix.lower()
-            if not suffix:
-                suffix = '.jpg'
-
-            # Create destination path
-            dest_path = references_dir / f"{image_type}{suffix}"
-
-            if suffix == '.png':
-                # Copy PNG directly — re-encoding through PIL can corrupt transparency
-                shutil.copy(image_path, dest_path)
-            elif suffix in ['.jpg', '.jpeg']:
+            if suffix == ".png":
+                shutil.copy(image_path, dest)
+            elif suffix in (".jpg", ".jpeg"):
                 img = Image.open(image_path)
-                if img.mode in ('RGBA', 'LA', 'P'):
-                    background = Image.new('RGB', img.size, (255, 255, 255))
-                    if img.mode == 'P':
-                        img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                    img = background
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(dest_path, 'JPEG', quality=95, optimize=True)
+                if img.mode in ("RGBA", "LA", "P"):
+                    bg = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                    img = bg
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(dest, "JPEG", quality=95, optimize=True)
             else:
-                shutil.copy(image_path, dest_path)
-
-            return str(dest_path)
+                shutil.copy(image_path, dest)
+            return str(dest)
         except Exception as e:
-            print(f"Warning: Could not copy {image_type} to project directory: {e}")
+            print(f"Warning: Could not copy {image_type} to project: {e}")
             return image_path
 
+    def _get_project_metadata_path(self, project_name: str = None) -> Path:
+        return self.output_dir / (project_name or self.project_name) / ".project_metadata.json"
+
+    # ── save / load ───────────────────────────────────────────────────────
+
     def save_project_state(self) -> str:
-        """Save current project state to disk for persistence across sessions."""
+        """Save app-level state and all registered panel states to disk."""
         try:
             project_dir = self.output_dir / self.project_name
             project_dir.mkdir(parents=True, exist_ok=True)
 
-            metadata_path = self._get_project_metadata_path()
+            panels_state = {}
+            for name, panel in self._panels.items():
+                panels_state[name] = panel.serialize(project_dir)
 
-            # Copy reference images to project directory for persistence
-            saved_reference_image_path = None
-            if self.reference_image_path:
-                saved_reference_image_path = self._copy_image_to_project(
-                    self.reference_image_path, "character_reference"
-                )
-
-            saved_additional_images_paths = []
-            if self.additional_images_paths:
-                for idx, img_path in enumerate(self.additional_images_paths):
-                    saved_path = self._copy_image_to_project(
-                        img_path, f"additional_{idx}"
-                    )
-                    saved_additional_images_paths.append(saved_path)
-
-            saved_greenzone_image_path = None
-            if self.greenzone_image_path:
-                saved_greenzone_image_path = self._copy_image_to_project(
-                    self.greenzone_image_path, "greenzone_base"
-                )
-
-            state = {
+            state: dict = {
                 "project_name": self.project_name,
-                "current_prompt": self.current_prompt,
-                "current_scene": self.current_scene,
-                "reference_image_path": saved_reference_image_path,
-                "additional_images_paths": saved_additional_images_paths,
-                "generated_images": self.generated_images,
-                "iteration_count": self.iteration_count,
-                "review_mode": self.review_mode,
-                "greenzone_image_path": saved_greenzone_image_path,
-                "current_phase2_description": self.current_phase2_description,
-                "phase1_scene_description": self.phase1_scene_description,
-                "phase1_review_history": self.phase1_review_history,
-                "phase1_review_context": self.phase1_review_context,
                 "chat_model": self.chat_model,
                 "image_model": self.image_model,
                 "draft_image_model": self.draft_image_model,
                 "draft_aspect_ratio": self.draft_aspect_ratio,
                 "last_saved": datetime.now().isoformat(),
+                "panels": panels_state,
             }
 
-            with open(metadata_path, 'w', encoding='utf-8') as f:
+            with open(self._get_project_metadata_path(), "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
 
-            # Also save a "last project" marker
-            last_project_path = self.output_dir / ".last_project.txt"
-            with open(last_project_path, 'w') as f:
-                f.write(self.project_name)
+            (self.output_dir / ".last_project.txt").write_text(self.project_name)
 
-            # Count saved images
-            saved_ref_count = 1 if saved_reference_image_path else 0
-            saved_additional_count = len(saved_additional_images_paths)
-            saved_greenzone_count = 1 if saved_greenzone_image_path else 0
-            total_refs = saved_ref_count + saved_additional_count + saved_greenzone_count
-
+            fpv_state = panels_state.get("fpv", {})
+            total_refs = sum([
+                1 if fpv_state.get("reference_image_path") else 0,
+                len(fpv_state.get("additional_images_paths", [])),
+                1 if fpv_state.get("greenzone_image_path") else 0,
+            ])
             return f"✅ Project '{self.project_name}' saved ({total_refs} reference image(s) backed up)"
+
         except Exception as e:
             return f"⚠️ Could not save project: {str(e)}"
 
-    def load_project_state(self, project_name: str = None) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], List]:
-        """Load project state from disk."""
-        # Clear state before loading to ensure clean slate
-        self.clear_state()
+    def load_project_state(self, project_name: str = None) -> Tuple[str, str]:
+        """
+        Load project state from disk. Restores app-level fields and all registered panels.
+        Returns (status_msg, project_display_str).
+        """
+        # Reset panels to blank before loading
+        self._clear_all_panels()
 
         try:
-            # If no project specified, try to load the last project
             if not project_name:
-                last_project_path = self.output_dir / ".last_project.txt"
-                if last_project_path.exists():
-                    project_name = last_project_path.read_text().strip()
+                last = self.output_dir / ".last_project.txt"
+                if last.exists():
+                    project_name = last.read_text().strip()
                 else:
-                    return "ℹ️ No saved project found", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
+                    return "ℹ️ No saved project found", self._get_project_display_string()
 
             metadata_path = self._get_project_metadata_path(project_name)
-
             if not metadata_path.exists():
-                return f"ℹ️ No saved state found for project '{project_name}'", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
+                return (
+                    f"ℹ️ No saved state found for project '{project_name}'",
+                    self._get_project_display_string(),
+                )
 
-            with open(metadata_path, 'r', encoding='utf-8') as f:
+            with open(metadata_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
 
-            # Restore state
             self.project_name = state.get("project_name", "untitled-project")
-            self.current_prompt = state.get("current_prompt", "")
-            self.current_scene = state.get("current_scene", "")
-            self.reference_image_path = state.get("reference_image_path")
-            self.additional_images_paths = state.get("additional_images_paths", [])
-            self.generated_images = state.get("generated_images", [])
-            self.iteration_count = state.get("iteration_count", 0)
-            self.review_mode = state.get("review_mode", "phase1")
-            self.greenzone_image_path = state.get("greenzone_image_path")
-            self.current_phase2_description = state.get("current_phase2_description", "")
-            self.phase1_scene_description = state.get("phase1_scene_description", "")
-            self.phase1_review_history = _normalize_chat_history(state.get("phase1_review_history", []))
-            self.phase1_review_context = state.get("phase1_review_context", {})
             self.chat_model = state.get("chat_model", "grok-4.20")
             self.image_model = state.get("image_model", "grok-imagine-image-2.0")
             self.draft_image_model = state.get("draft_image_model", "grok-imagine-image")
             self.draft_aspect_ratio = state.get("draft_aspect_ratio", "1:1")
 
+            # New format: state["panels"]["fpv"] / state["panels"]["element"]
+            # Legacy format: FPV state is flat at the top level (no "panels" key)
+            panels_state = state.get("panels")
+            for name, panel in self._panels.items():
+                if panels_state is not None:
+                    panel_dict = panels_state.get(name, {})
+                elif name == "fpv":
+                    # Legacy flat format — FPV state lives at the top level
+                    panel_dict = dict(state)
+                    panel_dict["review_history"] = _normalize_chat_history(
+                        state.get("phase1_review_history", [])
+                    )
+                    panel_dict["review_context"] = state.get("phase1_review_context", {})
+                else:
+                    panel_dict = {}
+                panel.deserialize(panel_dict)
+
             last_saved = state.get("last_saved", "unknown")
+            fpv_panel = self._panels.get("fpv")
+            ref_ok = fpv_panel and fpv_panel.reference_image_path and Path(fpv_panel.reference_image_path).exists()
+            add_count = len([p for p in (fpv_panel.additional_images_paths if fpv_panel else []) if Path(p).exists()])
+            gz_ok = fpv_panel and fpv_panel.greenzone_image_path and Path(fpv_panel.greenzone_image_path).exists()
 
-            # Check if reference images exist
-            ref_exists = self.reference_image_path and Path(self.reference_image_path).exists()
-            additional_count = len([p for p in self.additional_images_paths if Path(p).exists()])
-
-            # Load images for display (convert paths to list for gallery)
-            images_to_display = [img for img in self.generated_images if Path(img).exists()]
-
-            # Prepare reference image (return path if exists, None otherwise)
-            ref_image_to_load = self.reference_image_path if (self.reference_image_path and Path(self.reference_image_path).exists()) else None
-
-            # Prepare additional images (filter to only existing paths)
-            additional_images_to_load = [p for p in self.additional_images_paths if Path(p).exists()]
-
-            greenzone_image_to_load = self.greenzone_image_path if (self.greenzone_image_path and Path(self.greenzone_image_path).exists()) else None
-            # For Phase 2 projects, show the user's original enhancement description, not the constructed scene text
-            scene_to_show = self.current_phase2_description if self.review_mode == "phase2" else self.current_scene
-
-            return f"""✅ Loaded project '{self.project_name}'
-
-📅 Last saved: {last_saved}
-🎯 Mode: {self.review_mode}
-📝 Prompt: {'Set' if self.current_prompt else 'Not set'}
-📄 Scene description: {'Set' if self.current_scene else 'Not set'}
-🖼️ Character reference: {'✅ Available' if ref_exists else '❌ Missing'}
-➕ Additional images: {additional_count}
-📸 Generated images: {len(self.generated_images)}
-🔄 Iterations: {self.iteration_count}
-💬 Review history: {len(self.phase1_review_history)} message(s)
-🌿 Phase 2 greenzone: {'✅ Configured' if greenzone_image_to_load else 'Not set'}""", self._get_project_display_string(), self.current_prompt, images_to_display, ref_image_to_load, scene_to_show, additional_images_to_load, self.phase1_review_history, greenzone_image_to_load, images_to_display, self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
+            status = (
+                f"✅ Loaded project '{self.project_name}'\n\n"
+                f"📅 Last saved: {last_saved}\n"
+                f"🎯 Mode: {fpv_panel.review_mode if fpv_panel else 'N/A'}\n"
+                f"📝 Prompt: {'Set' if fpv_panel and fpv_panel.current_prompt else 'Not set'}\n"
+                f"🖼️ Character reference: {'✅ Available' if ref_ok else '❌ Missing'}\n"
+                f"➕ Additional images: {add_count}\n"
+                f"📸 Generated images: {len(fpv_panel.generated_images) if fpv_panel else 0}\n"
+                f"🔄 Iterations: {fpv_panel.iteration_count if fpv_panel else 0}\n"
+                f"💬 Review history: {len(fpv_panel.review_history) if fpv_panel else 0} message(s)\n"
+                f"🌿 Phase 2 greenzone: {'✅ Configured' if gz_ok else 'Not set'}"
+            )
+            return status, self._get_project_display_string()
 
         except Exception as e:
-            return f"❌ Error loading project: {str(e)}", self._get_project_display_string(), "", [], None, "", [], [], None, [], "grok-4.20", "grok-imagine-image-2.0", "grok-imagine-image", "1:1"
+            return f"❌ Error loading project: {str(e)}", self._get_project_display_string()
+
+    def set_project_name(self, project_name: str) -> Tuple[str, str]:
+        """
+        Set the active project name. Clears panels if this is a new project.
+        Returns (status_msg, project_display_str).
+        """
+        if not project_name or not project_name.strip():
+            return "❌ Project name cannot be empty", self._get_project_display_string()
+
+        sanitized = (
+            "".join(c if c.isalnum() or c in ("-", "_", " ") else "_" for c in project_name)
+            .strip()
+            .replace(" ", "-")
+            .lower()
+        )
+
+        if sanitized != self.project_name:
+            is_new = not self._get_project_metadata_path(sanitized).exists()
+            if is_new:
+                self._clear_all_panels()
+            self.project_name = sanitized
+            suffix = " (New project — state cleared)" if is_new else ""
+            return f"✅ Project set to: {sanitized}{suffix}", self._get_project_display_string()
+
+        return f"📁 Project: {sanitized}", self._get_project_display_string()
+
+    # ── helpers ───────────────────────────────────────────────────────────
+
+    def _clear_all_panels(self) -> None:
+        for panel in self._panels.values():
+            panel.deserialize({})
 
     def list_projects(self) -> List[str]:
-        """List all available projects."""
         try:
             if not self.output_dir.exists():
                 return []
-
             projects = []
             for item in self.output_dir.iterdir():
-                if item.is_dir() and not item.name.startswith('.'):
-                    metadata_path = item / ".project_metadata.json"
-                    if metadata_path.exists():
-                        # Has metadata, include with timestamp
+                if item.is_dir() and not item.name.startswith("."):
+                    meta = item / ".project_metadata.json"
+                    if meta.exists():
                         try:
-                            with open(metadata_path, 'r') as f:
-                                state = json.load(f)
-                                last_saved = state.get("last_saved", "")
-                                projects.append((item.name, last_saved))
-                        except:
+                            s = json.loads(meta.read_text())
+                            projects.append((item.name, s.get("last_saved", "")))
+                        except Exception:
                             projects.append((item.name, ""))
                     else:
-                        # Old project without metadata
                         projects.append((item.name, ""))
-
-            # Sort by last saved (most recent first)
             projects.sort(key=lambda x: x[1], reverse=True)
             return [name for name, _ in projects]
         except Exception as e:
             print(f"Error listing projects: {e}")
             return []
-
-    def set_project_name(self, project_name: str) -> Tuple[str, str, str, List, Optional[str], str, List, List, Optional[str], List]:
-        """Set the project name and reset iteration count."""
-        if not project_name or not project_name.strip():
-            return "❌ Project name cannot be empty", self._get_project_display_string(), "", [], None, "", [], [], None, [], self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
-
-        # Sanitize project name (remove special characters)
-        sanitized = "".join(c if c.isalnum() or c in ('-', '_', ' ') else '_' for c in project_name)
-        sanitized = sanitized.strip().replace(' ', '-').lower()
-
-        if sanitized != self.project_name:
-            # Check if this is a new project (doesn't exist yet)
-            metadata_path = self.output_dir / sanitized / ".project_metadata.json"
-            is_new_project = not metadata_path.exists()
-
-            if is_new_project:
-                # New project - clear all state
-                self.clear_state()
-
-            self.project_name = sanitized
-            status_msg = f"✅ Project set to: {sanitized}"
-            if is_new_project:
-                status_msg += " (New project - state cleared)"
-
-            # Return cleared UI values for new project, or current values for existing project
-            return (
-                status_msg,
-                self._get_project_display_string(),
-                "" if is_new_project else self.current_prompt,
-                [] if is_new_project else self.generated_images,
-                None if is_new_project else self.reference_image_path,
-                "" if is_new_project else self.current_scene,
-                [] if is_new_project else self.additional_images_paths,
-                [] if is_new_project else self.phase1_review_history,
-                None if is_new_project else self.greenzone_image_path,
-                [] if is_new_project else self.generated_images,
-                self.chat_model,
-                self.image_model,
-                self.draft_image_model,
-                self.draft_aspect_ratio,
-            )
-        return f"📁 Project: {sanitized}", self._get_project_display_string(), self.current_prompt, self.generated_images, self.reference_image_path, self.current_scene, self.additional_images_paths, self.phase1_review_history, self.greenzone_image_path, self.generated_images, self.chat_model, self.image_model, self.draft_image_model, self.draft_aspect_ratio
