@@ -24,10 +24,12 @@ class ElementWorkflowPanel(WorkflowPanel):
         # Element-specific persistent state
         self.element_reference_path: Optional[str] = None
         self.element_description: str = ""
+        self.background_color: str = "Auto"
 
         # Gradio component refs (set by render)
         self.element_reference = None
         self.element_desc_box = None
+        self.element_bg_radio = None
 
     @property
     def panel_id(self) -> str:
@@ -49,7 +51,7 @@ class ElementWorkflowPanel(WorkflowPanel):
         return {
             "failed_images": images_to_review,
             "original_prompt": self.current_prompt,
-            "scene_description": f"FPV element: {self.element_description}\nBackground: transparent (alpha channel PNG)",
+            "scene_description": f"FPV element: {self.element_description}\nBackground: {self.background_color}",
             "reference_image": self.element_reference_path,
             "additional_images": None,
             "review_mode": "phase1",
@@ -62,6 +64,7 @@ class ElementWorkflowPanel(WorkflowPanel):
         self,
         reference_image,
         element_description: str,
+        background_color: str,
         progress=gr.Progress(),
     ):
         _btn_reset = gr.update(value="🎯 Generate Prompt", interactive=True)
@@ -84,10 +87,22 @@ class ElementWorkflowPanel(WorkflowPanel):
             progress(0, desc="Saving reference...")
             self.element_reference_path = ps.save_uploaded_file(reference_image)
             self.element_description = element_description
+            self.background_color = background_color
 
+            bg_descriptions = {
+                "White": "solid white (#FFFFFF)",
+                "Chroma Green": "solid chroma green (#00FF00)",
+                "Auto": (
+                    "Auto — examine IMAGE_0 and the element description, then choose the "
+                    "background color that is most distinct from the element's colors: "
+                    "solid white (#FFFFFF) for dark elements (dark hair, dark fabric, deep shadows), "
+                    "solid chroma green (#00FF00) for light elements (skin tones, light hair, light fabric). "
+                    "State your choice on the first line of your response as: Background choice: [color]"
+                ),
+            }
+            bg_desc = bg_descriptions.get(background_color, "solid white (#FFFFFF)")
             element_scene = (
-                f"FPV element to generate:\n{element_description}"
-                "\n\nBackground: pure transparent background, alpha channel PNG, no background fill"
+                f"FPV element to generate:\n{element_description}\n\nBackground: {bg_desc}"
             )
 
             progress(0.5, desc="Waiting for Grok API (~30s)...")
@@ -116,26 +131,28 @@ class ElementWorkflowPanel(WorkflowPanel):
             "review_context": self.review_context,
             "element_reference_path": self.element_reference_path,
             "element_description": self.element_description,
+            "background_color": self.background_color,
         }
 
     def deserialize(self, d: dict) -> None:
         super().deserialize(d)
         self.element_reference_path = d.get("element_reference_path")
         self.element_description = d.get("element_description", "")
+        self.background_color = d.get("background_color", "Auto")
 
     # get_ui_outputs() and get_ui_restore_values() inherited from WorkflowPanel —
     # they include prompt_box, failed_gallery, output_gallery, review_chatbot,
     # image_model_dropdown, draft_model_dropdown, draft_aspect_ratio_dropdown.
 
     def get_prompt_tab_inputs(self) -> List:
-        return [self.element_reference, self.element_desc_box]
+        return [self.element_reference, self.element_desc_box, self.element_bg_radio]
 
     # ── render hooks ─────────────────────────────────────────────────────
 
     def render_prompt_tab_content(self) -> None:
         gr.Markdown(
             "Generate a first-person perspective element (hair fringe, arm, shoulder, etc.) "
-            "isolated on a transparent background — ready to warp and composite in GIMP."
+            "isolated on a solid background — remove it in GIMP with **Colors → Color to Alpha**."
         )
         with gr.Row():
             self.element_reference = gr.Image(
@@ -144,20 +161,28 @@ class ElementWorkflowPanel(WorkflowPanel):
                 sources=["upload"],
                 height=220,
             )
-            self.element_desc_box = gr.Textbox(
-                label="Element Description",
-                lines=5,
-                placeholder=(
-                    "e.g. Short straight square dark anime bob hair fringe, seen at the top and "
-                    "left-side edges of the first-person view, head slightly turned right"
-                ),
-            )
+            with gr.Column():
+                self.element_desc_box = gr.Textbox(
+                    label="Element Description",
+                    lines=5,
+                    placeholder=(
+                        "e.g. Short straight square dark anime bob hair fringe, seen at the top and "
+                        "left-side edges of the first-person view, head slightly turned right"
+                    ),
+                )
+                self.element_bg_radio = gr.Radio(
+                    choices=["Auto", "White", "Chroma Green"],
+                    value="Auto",
+                    label="Background Color",
+                    info="Auto → LLM picks based on element colors. White → dark hair/clothing. Chroma Green → skin tones or light elements.",
+                )
 
     def _wire_events(self) -> None:
         super()._wire_events()
 
         self.element_reference.change(
-            fn=self._on_reference_change, inputs=[self.element_reference]
+            fn=self._on_reference_change,
+            inputs=[self.element_reference],
         )
 
     def _on_reference_change(self, ref_image) -> None:
