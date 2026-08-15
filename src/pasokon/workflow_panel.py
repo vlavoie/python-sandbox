@@ -586,23 +586,24 @@ class WorkflowPanel(ABC):
             outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot, self._work_item_label],
         )
 
-        def send_message(msg, history, uploaded, current_gallery):
+        def send_message(msg, history, uploaded):
             msg = (msg or "").strip() or "Review these"
             if not history or not self.review_context:
                 result = self.start_review(msg, uploaded)
-                return result[0], "", render_gallery_html(result[2])
+                gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg, history)
-                return result[0], "", current_gallery
+                gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
+            return result[0], "", gallery_html
 
         self._send_btn.click(
             fn=send_message,
-            inputs=[self.review_input, self.review_chatbot, self._failed_upload, self.failed_gallery],
+            inputs=[self.review_input, self.review_chatbot, self._failed_upload],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
         )
         self.review_input.submit(
             fn=send_message,
-            inputs=[self.review_input, self.review_chatbot, self._failed_upload, self.failed_gallery],
+            inputs=[self.review_input, self.review_chatbot, self._failed_upload],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery],
         )
         self._extract_btn.click(
