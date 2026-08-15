@@ -95,11 +95,13 @@ That is sufficient. Do not repeat it.
 
 **Phase 1:** Do not mention hair at all — no request, no description, no "no hair". Simply write the scene without it. Aurora will not add hair if it is not described.
 
-**Phase 2 green-zone addition:** Describe the hair as a peripheral spatial presence:
-> "At the outer left and right edges of the frame where the green zones are marked on IMAGE_1, soft dark curly hair strands appear as light peripheral fringe entering the very edges of the first-person view — fine and natural, matching the dark rich color, curl pattern, and shine of IMAGE_0's hair. Only at the peripheral frame edges; center of frame unchanged."
+**Phase 2 green-zone addition:** Describe the hair as a frame-border detail — the camera sits within the hairline, so the hair is the geometric border of the frame, not something moving into it:
+> "The left and right frame borders reveal a [X]%-wide strip of the viewer's own [style] hair — a natural frame-border detail from first-person perspective where the camera sits just behind the eyes within the hairline. The strip is [color, texture, style matching IMAGE_0], wider on the [left/right] side due to [context e.g. head angle]."
+
+Avoid "strands entering from the frame edges" — Aurora maps this to characters appearing at the sides of a scene. Describe it as a static frame-border property.
 
 - If a solid-color exclusion zone exists (e.g. bright pink): "The [color] area in IMAGE_1 remains exactly as shown."
-- Do not describe hair position relative to the floor or describe any downward hair. Describe it only as peripheral/edge/entering the frame from the sides.
+- Do not describe hair relative to the floor or in any downward direction.
 
 ---
 

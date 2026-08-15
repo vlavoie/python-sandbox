@@ -213,7 +213,14 @@ Context:
 
                 self.current_scene = full_scene
 
-                phase2_prefix = """PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
+                scene_context_section = ""
+                if self.phase1_scene_description:
+                    scene_context_section = f"""
+PHASE 1 SCENE CONTEXT — what IMAGE_1 shows (use this to understand the scene):
+{self.phase1_scene_description}
+
+"""
+                phase2_prefix = f"""PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
 
 You are generating a Grok Imagine prompt for Phase 2: a surgical local addition to an existing base image.
 
@@ -222,20 +229,22 @@ AURORA MODEL RULES — apply these before generating anything:
 - Aurora's first 20–30 tokens dominate the output. Front-load the most critical instruction.
 - Repetition dilutes, not emphasizes. State each element once, precisely, early.
 - Write spatially: describe what appears where in the frame.
-
+{scene_context_section}
 FIXED IMAGE ASSIGNMENT:
 - <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color lock to this image
 - <IMAGE_1> = GREEN-MARKED BASE — unchanged spatial base; only the green-painted zones change
 
 PROMPT STRUCTURE — generate in this exact order:
 1. Open with: "Starting from IMAGE_1 as the unchanged spatial and compositional base, [brief description of what appears in the green-zone areas]."
-2. Spatial description of the addition: where in the frame, color/texture/style matching IMAGE_0.
-3. Base statement (once): "Everything outside the green-marked zones remains identical to IMAGE_1."
-4. Paint removal (once): "Green paint fully removed in the final image."
-5. Style anchor: "[Element] color, texture, and style matches IMAGE_0."
+2. Describe the scene from IMAGE_1 briefly so Aurora understands the visual context.
+3. Spatial description of the addition: where in the frame, color/texture/style matching IMAGE_0.
+4. Base statement (once): "Everything outside the green-marked zones remains identical to IMAGE_1."
+5. Paint removal (once): "Green paint fully removed in the final image."
+6. Style anchor: "[Element] color, texture, and style matches IMAGE_0."
 
-For hair/fringe additions, describe as spatial peripheral presence:
-"At the outer left and right peripheral edges of the frame where the green zones are marked on IMAGE_1, soft dark curly hair strands appear as light fringe entering the very edges of the first-person view — fine and natural, matching IMAGE_0's hair color, curl pattern, and natural highlights. Only at the peripheral frame edges."
+For hair/fringe additions at the frame edges, describe as a frame-border detail seen from inside the hairline:
+"The [left/right/top] frame borders reveal a thin strip of the viewer's own [style] hair — the camera is positioned at eye level within the hairline, making the [bob/fringe/etc.] naturally visible as a narrow frame-border detail at the absolute [left/right] edge, [X]% wide on the left and [Y]% on the right."
+This framing avoids characters-at-the-edges misinterpretation. Do NOT use "strands entering the frame" — describe it as a static frame-border detail.
 
 If a solid-color exclusion zone is present (e.g. bright pink): "The [color] area in IMAGE_1 remains exactly as shown."
 
@@ -255,6 +264,7 @@ Fill every sentence with specific visual content — materials, lighting quality
                 self.greenzone_image_path = None
                 self.review_mode = "phase1"
                 self.current_scene = scene_description
+                self.phase1_scene_description = scene_description
                 progress(0.5, desc="Waiting for Grok API (~30s)...")
                 self.current_prompt = self.client.generate_prompt(
                     reference_image=self.reference_image_path,

@@ -73,6 +73,25 @@ Examples of the correct correction logic:
 
 ---
 
+## Known hard failure: characters/figures generated at frame edges instead of hair
+
+This is the most common Phase 2 hair failure and is a deadlock trigger. If it happens twice, do not keep tweaking the same structure — that approach is broken.
+
+**Why it happens:** "Strands entering from the frame edges" reads to Aurora as people walking into the sides of the scene. In Aurora's training data, things that appear at the peripheral edges of a frame are almost always characters or objects, not hair. The word "entering" implies motion and presence of a figure.
+
+**The fix — reframe as a frame-border detail:**
+Describe the hair as a static geometric property of the frame itself, not as something entering it. The camera is positioned within the hairline, so the hair is simply the border of the frame. Use language like:
+> "The left and right frame borders are lined with a [X]%-wide strip of the viewer's own [style] hair — a natural frame-border detail seen from a first-person perspective where the camera sits just behind the eyes within the hairline."
+
+Also: Phase 2 prompts must include scene context (what IMAGE_1 shows — the FPV scene type, style, looking direction). Without this, Aurora has no context for what kind of image it's modifying and defaults to common scene interpretations. Include a brief scene description after the base clause: "IMAGE_1 shows a first-person [anime/illustrated] FPV scene [looking direction], [brief scene content]."
+
+**Escalation sequence for this specific failure:**
+1. First occurrence: rewrite hair as frame-border detail, add scene context after base clause.
+2. Second occurrence: tighten the frame-border percentage, add art style reinforcement ("illustrated anime style throughout, matching IMAGE_0 exactly").
+3. Third occurrence: recommend the user try a different base image with a cleaner perspective, or adjust the green zone to be less ambiguous.
+
+---
+
 ## Technique escalation — when the same failure repeats
 
 If the same failure repeats 2+ times with prompt rewrites, the prompt approach isn't working. Switch technique:

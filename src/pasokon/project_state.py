@@ -44,6 +44,7 @@ class ProjectState:
         # Phase 2 context (for enhancement generation in Tab 4)
         self.greenzone_image_path = None
         self.current_phase2_description = ""
+        self.phase1_scene_description = ""  # preserved when Phase 2 overwrites current_scene
         self.review_mode = "phase1"  # or "phase2" - controls image ordering in Tab 3
 
         # Model preferences (persisted per project)
@@ -83,6 +84,7 @@ class ProjectState:
         self.phase1_review_context = {}
         self.greenzone_image_path = None
         self.current_phase2_description = ""
+        self.phase1_scene_description = ""
         self.review_mode = "phase1"
 
     def _get_project_display_string(self) -> str:
@@ -231,6 +233,7 @@ class ProjectState:
                 "review_mode": self.review_mode,
                 "greenzone_image_path": saved_greenzone_image_path,
                 "current_phase2_description": self.current_phase2_description,
+                "phase1_scene_description": self.phase1_scene_description,
                 "phase1_review_history": self.phase1_review_history,
                 "phase1_review_context": self.phase1_review_context,
                 "chat_model": self.chat_model,
@@ -291,6 +294,7 @@ class ProjectState:
             self.review_mode = state.get("review_mode", "phase1")
             self.greenzone_image_path = state.get("greenzone_image_path")
             self.current_phase2_description = state.get("current_phase2_description", "")
+            self.phase1_scene_description = state.get("phase1_scene_description", "")
             self.phase1_review_history = _normalize_chat_history(state.get("phase1_review_history", []))
             self.phase1_review_context = state.get("phase1_review_context", {})
             self.chat_model = state.get("chat_model", "grok-4.20")
