@@ -44,6 +44,7 @@ class WorkflowPanel(ABC):
         self.current_prompt: str = ""
         self.generated_images: List[str] = []
         self.iteration_count: int = 0
+        self.work_item: int = 1
         self.review_history: List = []
         self.review_context: dict = {}
 
@@ -65,6 +66,7 @@ class WorkflowPanel(ABC):
         self.image_model_dropdown = None
         self.draft_model_dropdown = None
         self.draft_aspect_ratio_dropdown = None
+        self._work_item_label = None
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -94,6 +96,19 @@ class WorkflowPanel(ABC):
         """
 
     # ── optional hooks ────────────────────────────────────────────────────
+
+    def _work_item_status(self) -> str:
+        return f"**Work Item {self.work_item}** · Iteration {self.iteration_count}"
+
+    def _start_new_prompt(self) -> None:
+        """Advance work item if prior work exists, then clear per-item state.
+        Call at the top of do_generate_prompt in every subclass."""
+        if self.iteration_count > 0 or self.generated_images:
+            self.work_item += 1
+            self.iteration_count = 0
+            self.generated_images = []
+        self.review_history = []
+        self.review_context = {}
 
     def render_prompt_tab_content(self) -> None:
         """Add subclass-specific inputs above the shared prompt box."""
@@ -156,6 +171,7 @@ class WorkflowPanel(ABC):
             self.image_model_dropdown,
             self.draft_model_dropdown,
             self.draft_aspect_ratio_dropdown,
+            self._work_item_label,
         ]
 
     def get_ui_restore_values(self) -> List:
@@ -169,6 +185,7 @@ class WorkflowPanel(ABC):
             gr.update(value=ps.image_model),
             gr.update(value=ps.draft_image_model),
             gr.update(value=ps.draft_aspect_ratio),
+            gr.update(value=self._work_item_status()),
         ]
 
     # ── image generation ─────────────────────────────────────────────────
@@ -180,6 +197,7 @@ class WorkflowPanel(ABC):
         base_dir = ps.output_dir / ps.project_name
         if self.get_output_subdir():
             base_dir = base_dir / self.get_output_subdir()
+        base_dir = base_dir / f"work-item-{self.work_item}"
         base_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         batch_dir = base_dir / f"{timestamp}_iteration-{iteration}"
@@ -244,11 +262,12 @@ class WorkflowPanel(ABC):
 
             ps = self.app.project_state
             is_partial = len(images) < num_images
+            wi_label = f"Work Item {self.work_item} · Iteration {self.iteration_count}"
             status = (
-                f"⚠️ Partial: {len(images)}/{num_images} images (Iteration {self.iteration_count})\n"
+                f"⚠️ Partial: {len(images)}/{num_images} images ({wi_label})\n"
                 f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
                 if is_partial else
-                f"✅ Generated {len(images)} images (Iteration {self.iteration_count})\n"
+                f"✅ Generated {len(images)} images ({wi_label})\n"
                 f"💾 Saved to: {ps.project_name}/{saved_dir.name}/"
             )
             ps.save_project_state()
@@ -281,17 +300,22 @@ class WorkflowPanel(ABC):
 
             if not images:
                 progress(1.0, desc="No images returned")
-                return render_gallery_html(self.generated_images), gr.update(), gr.update()
+                return render_gallery_html(self.generated_images), gr.update(), gr.update(), gr.update()
 
             if self.review_context:
                 self.review_context["failed_images"] = images
 
             progress(1.0, desc="Done")
-            return render_gallery_html(images), render_gallery_html([]), gr.update()
+            return (
+                render_gallery_html(images),
+                render_gallery_html([]),
+                gr.update(),
+                gr.update(value=self._work_item_status()),
+            )
 
         except Exception:
             progress(1.0, desc="Failed")
-            return render_gallery_html(self.generated_images), gr.update(), gr.update()
+            return render_gallery_html(self.generated_images), gr.update(), gr.update(), gr.update()
 
     # ── review ────────────────────────────────────────────────────────────
 
@@ -469,6 +493,7 @@ class WorkflowPanel(ABC):
             "current_prompt": self.current_prompt,
             "generated_images": self.generated_images,
             "iteration_count": self.iteration_count,
+            "work_item": self.work_item,
             "review_history": self.review_history,
             "review_context": self.review_context,
         }
@@ -478,6 +503,7 @@ class WorkflowPanel(ABC):
         self.current_prompt = d.get("current_prompt", "")
         self.generated_images = d.get("generated_images", [])
         self.iteration_count = d.get("iteration_count", 0)
+        self.work_item = d.get("work_item", 1)
         self.review_history = d.get("review_history", [])
         self.review_context = d.get("review_context", {})
 
@@ -515,6 +541,7 @@ class WorkflowPanel(ABC):
                         info="Draft uses the draft model and draft ratio from above",
                     )
                 self._gen_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
+                self._work_item_label = gr.Markdown(value=self._work_item_status())
                 self.output_gallery = gr.HTML()
 
             with gr.Tab("🔍 Review & Correct", id=f"{self.panel_id}_review"):
@@ -570,7 +597,7 @@ class WorkflowPanel(ABC):
                 self._aspect_ratio_dropdown,
                 self._draft_mode_radio,
             ],
-            outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot],
+            outputs=[self.output_gallery, self.failed_gallery, self.review_chatbot, self._work_item_label],
         )
 
         def send_message(msg, history, uploaded, current_gallery):

@@ -83,9 +83,7 @@ class ElementWorkflowPanel(WorkflowPanel):
             yield gr.update(), gr.update(), gr.update(value=[]), _btn_reset
             return
 
-        # New prompt → fresh review state
-        self.review_history = []
-        self.review_context = {}
+        self._start_new_prompt()
 
         yield gr.update(), gr.update(), gr.update(value=[]), _btn_loading
 
@@ -134,6 +132,7 @@ class ElementWorkflowPanel(WorkflowPanel):
             "current_prompt": self.current_prompt,
             "generated_images": self.generated_images,
             "iteration_count": self.iteration_count,
+            "work_item": self.work_item,
             "review_history": self.review_history,
             "review_context": self.review_context,
             "element_reference_path": self.element_reference_path,

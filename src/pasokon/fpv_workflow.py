@@ -38,6 +38,9 @@ class FPVWorkflowPanel(WorkflowPanel):
     def panel_id(self) -> str:
         return "fpv"
 
+    def get_output_subdir(self) -> str:
+        return "fpv-outputs"
+
     # ── WorkflowPanel overrides ───────────────────────────────────────────
 
     def get_reference_image_path(self) -> Optional[str]:
@@ -134,9 +137,7 @@ A primary failure mode is when the model regenerates the entire image instead of
 
         is_phase2 = greenzone_image is not None
 
-        # New prompt → fresh review state
-        self.review_history = []
-        self.review_context = {}
+        self._start_new_prompt()
 
         yield gr.update(), gr.update(), gr.update(value=[]), _btn_loading
 
@@ -266,6 +267,7 @@ Context:
             "additional_images_paths": saved_additional,
             "generated_images": self.generated_images,
             "iteration_count": self.iteration_count,
+            "work_item": self.work_item,
             "review_mode": self.review_mode,
             "greenzone_image_path": saved_gz,
             "current_phase2_description": self.current_phase2_description,
@@ -279,6 +281,7 @@ Context:
         self.current_prompt = d.get("current_prompt", "")
         self.generated_images = d.get("generated_images", [])
         self.iteration_count = d.get("iteration_count", 0)
+        self.work_item = d.get("work_item", 1)
         self.review_history = d.get("review_history") or d.get("phase1_review_history", [])
         self.review_context = d.get("review_context") or d.get("phase1_review_context", {})
         self.current_scene = d.get("current_scene", "")
@@ -302,6 +305,7 @@ Context:
             self.image_model_dropdown,
             self.draft_model_dropdown,
             self.draft_aspect_ratio_dropdown,
+            self._work_item_label,
         ]
 
     def get_ui_restore_values(self) -> List:
@@ -325,6 +329,7 @@ Context:
             gr.update(value=ps.image_model),
             gr.update(value=ps.draft_image_model),
             gr.update(value=ps.draft_aspect_ratio),
+            gr.update(value=self._work_item_status()),
         ]
 
     def get_prompt_tab_inputs(self) -> List:
