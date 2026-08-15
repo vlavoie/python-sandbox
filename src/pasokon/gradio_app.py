@@ -215,36 +215,31 @@ Context:
 
                 phase2_prefix = """PHASE 2 ENHANCEMENT MODE — GREEN ZONE SURGICAL ADDITION
 
-You are generating a Grok Imagine prompt for Phase 2: a surgical, local addition to an existing base image. This is NOT a full regeneration.
+You are generating a Grok Imagine prompt for Phase 2: a surgical local addition to an existing base image.
 
-FIXED IMAGE ASSIGNMENT (overrides any conflicting convention in the skill below):
-- <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color, and clothing all lock to this image
-- <IMAGE_1> = GREEN-MARKED BASE IMAGE — the unmodified spatial base; only the green-painted zones may change
+AURORA MODEL RULES — apply these before generating anything:
+- Aurora ignores negative language ("not", "no", "never", "forbidden"). Do not use it.
+- Aurora's first 20–30 tokens dominate the output. Front-load the most critical instruction.
+- Repetition dilutes, not emphasizes. State each element once, precisely, early.
+- Write spatially: describe what appears where in the frame.
 
-WHAT THE GENERATED PROMPT MUST DO:
-The prompt must force the image model to make a precise local change and leave everything else untouched. Vague language causes full regeneration instead of a surgical addition — be explicit.
+FIXED IMAGE ASSIGNMENT:
+- <IMAGE_0> = CHARACTER REFERENCE — identity, style, appearance, hair color lock to this image
+- <IMAGE_1> = GREEN-MARKED BASE — unchanged spatial base; only the green-painted zones change
 
-REQUIRED sections the generated prompt MUST contain:
+PROMPT STRUCTURE — generate in this exact order:
+1. Open with: "Starting from IMAGE_1 as the unchanged spatial and compositional base, [brief description of what appears in the green-zone areas]."
+2. Spatial description of the addition: where in the frame, color/texture/style matching IMAGE_0.
+3. Base statement (once): "Everything outside the green-marked zones remains identical to IMAGE_1."
+4. Paint removal (once): "Green paint fully removed in the final image."
+5. Style anchor: "[Element] color, texture, and style matches IMAGE_0."
 
-1. BASE PRESERVATION (mandatory): State clearly that <IMAGE_1> is the spatial base and that every area outside the green zones must be preserved exactly — background, composition, character body, existing scene elements, all unchanged.
+For hair/fringe additions, describe as spatial peripheral presence:
+"At the outer left and right peripheral edges of the frame where the green zones are marked on IMAGE_1, soft dark curly hair strands appear as light fringe entering the very edges of the first-person view — fine and natural, matching IMAGE_0's hair color, curl pattern, and natural highlights. Only at the peripheral frame edges."
 
-2. ADDITION SCOPE (mandatory): Specify that the new element is added ONLY inside the green zones on <IMAGE_1>. Nothing may be added or changed outside the green zones.
+If a solid-color exclusion zone is present (e.g. bright pink): "The [color] area in IMAGE_1 remains exactly as shown."
 
-3. PAINT ERASURE (mandatory): "Completely erase all green/pink paint afterward — no trace of any paint, marker, or overlay color should remain."
-
-4. STYLE LOCK (mandatory): Lock all appearance, color, texture, and style to <IMAGE_0>.
-
-5. ZONE BAN (mandatory for hair additions): Explicitly forbid anything other than the requested element from appearing inside the green zones — no faces, heads, necks, shoulders, skin, or clothing; only the pure element (e.g. hair strands).
-
-6. SURGICAL FRAMING (mandatory): State that this is a local addition, not a full image regeneration.
-
-For hair/fringe additions, the generated prompt MUST use:
-- Proven language: "soft long dark curly and wavy peripheral fringe hair appearing only as light strands in my peripheral vision at the edges of the frame"
-- Color lock: "match the rich, deep dark color and natural lighting/highlights from <IMAGE_0>"
-- If a solid-color exclusion zone is present: "Keep the [color] area exactly as shown. Do not touch or alter the [color]."
-- Do NOT include any language involving floors, mops, piles, or cascading — even as negatives, these cause floor-hair generation.
-
-The generated prompt must be strict and explicit. Repeat the preservation and scope constraints at least twice.
+Target: 60–120 words total. Spatial and specific. No ban lists. No repetition.
 
 ---
 
@@ -480,12 +475,15 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
                 )
             if not images:
                 progress(1.0, desc="Warning: No images returned")
-                return render_gallery_html(self.generated_images), gr.update()
+                return render_gallery_html(self.generated_images), gr.update(), gr.update()
+            # New batch ready — stale review context would send wrong images to reviewer.
+            self.phase1_review_history = []
+            self.phase1_review_context = {}
             progress(1.0, desc="Done")
-            return render_gallery_html(images), render_gallery_html(failed)
+            return render_gallery_html(images), render_gallery_html(failed), gr.update(value=[])
         except Exception:
             progress(1.0, desc="Failed")
-            return render_gallery_html(self.generated_images), gr.update()
+            return render_gallery_html(self.generated_images), gr.update(), gr.update()
 
     def _load_project_for_ui(self, project_name=None):
         result = list(self.load_project_state(project_name))
@@ -757,7 +755,7 @@ The generated prompt must be strict and explicit. Repeat the preservation and sc
             generate_images_btn.click(
                 fn=self._generate_images_for_ui,
                 inputs=[prompt_to_use, num_images_slider, aspect_ratio_dropdown, draft_mode_radio],
-                outputs=[output_gallery, failed_images_gallery]
+                outputs=[output_gallery, failed_images_gallery, review_chatbot]
             )
 
             # Tab 4: Review & Correct

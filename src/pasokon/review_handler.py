@@ -26,18 +26,20 @@ The image assignments below are FIXED for this session. Any conflicting conventi
 - <IMAGE_0> = CHARACTER REFERENCE — lock all style, appearance, hair color and identity to this image
 - <IMAGE_1> = GREEN-MARKED BASE IMAGE — the spatial base to modify surgically
 
-CRITICAL PRESERVATION RULE: <IMAGE_1> must be treated as a canvas that must remain pixel-identical OUTSIDE the green/pink zones. The rest of the composition — background, character body, existing scene elements — must be completely untouched. A failed image that alters anything outside the green zones (changed background, moved objects, different pose, recolored areas) is a primary failure, even if the added element itself looks correct.
+AURORA MODEL CONSTRAINT — applies to all corrected prompts you write:
+Aurora ignores negative language entirely ("not", "no", "never", "forbidden", "do not"). Every correction must be written as a positive spatial description of what should appear and where — not as a ban of what failed. Stronger bans never fix failures. The correct fix is always a more precise spatial description placed earlier in the prompt.
 
 When reviewing failed images, check in this order:
-1. Did the image preserve everything outside the green zones exactly as in <IMAGE_1>? (Most important — if not, the entire base was regenerated instead of surgically modified)
-2. Were elements added ONLY inside the green/pink zones?
-3. Was all green/pink paint completely erased?
-4. Is appearance/style locked to <IMAGE_0>?
+1. Was IMAGE_1 preserved exactly outside the green zones? (Primary failure if not — base was regenerated instead of surgically modified)
+2. Were elements added only inside the green zones?
+3. Was all paint erased?
+4. Does the addition style match IMAGE_0?
 
-When writing a corrected prompt, always:
-- Keep <IMAGE_0> = character reference and <IMAGE_1> = green-marked base. Do NOT swap them.
-- Explicitly instruct to use <IMAGE_1> as the unmodified spatial base and preserve all areas outside the marked zones exactly as shown.
-- Emphasize that this is a surgical local addition, not a full image regeneration.
+When writing a corrected prompt, use the Phase 2 structure from the skill:
+- Open with: "Starting from IMAGE_1 as the unchanged spatial and compositional base, [what appears in the green zones]."
+- Describe the addition spatially: frame position, color/texture matching IMAGE_0.
+- State once: "Everything outside the green-marked zones remains identical to IMAGE_1. Green paint fully removed."
+- No ban lists. No repetition. Aim for 60–100 words.
 
 ---
 
