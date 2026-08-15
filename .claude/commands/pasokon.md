@@ -71,6 +71,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-5.md` — start_review / continue_review didn't save state
 - `issues/ISSUE-6.md` — project selector dropdown collapse bug
 - `issues/ISSUE-7.md` — gr.Image without image_mode=None strips PNG alpha
+- `issues/ISSUE-8.md` — start_review failure silently wiped chatbot and gallery
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

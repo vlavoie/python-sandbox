@@ -582,8 +582,14 @@ class WorkflowPanel(ABC):
 
         def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
+            prior_history = list(self.review_history)
+            prior_gallery = render_gallery_html(self.generated_images or [])
             if not self.review_history or not self.review_context:
                 result = self.start_review(msg, uploaded)
+                if not result[0]:
+                    # start_review failed — preserve display, show error in chat
+                    err = result[1] or "❌ Could not start review. Re-generate images first."
+                    return prior_history + [{"role": "assistant", "content": err}], "", prior_gallery
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
