@@ -49,7 +49,7 @@ class ElementWorkflowPanel(WorkflowPanel):
         return None
 
     def get_review_skill(self) -> str:
-        return self.app.project_state.review_skill
+        return self.app.project_state.element_skill
 
     def build_review_context(self, images_to_review: List[str]) -> dict:
         return {
