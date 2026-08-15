@@ -39,10 +39,11 @@ Count and order must match exactly between the two methods.
 
 ### review_context is session-only
 `review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.
-This forces `start_review` on the first message of every new session, rebuilding context
-from `self.generated_images`. Restoring stale `review_context` causes the LLM to review
-old images and the gallery to revert after send.
-`review_history` IS restored (for display reference), but gets overwritten by `start_review`.
+On the first message of a new session, `send_message` detects `review_history` present but
+`review_context` empty and silently rebuilds context via `build_review_context(generated_images)`,
+then calls `continue_review` — history is preserved.
+`start_review` is ONLY called when `review_history` is empty (genuine fresh conversation).
+Never call `start_review` when history exists — it unconditionally replaces `review_history`.
 
 ### Persistent paths
 `self.generated_images` and `review_context["failed_images"]` must always contain
@@ -62,11 +63,16 @@ The save must happen AFTER all state mutations — never before.
 - `cost_in_usd_ticks` in response `usage`: divide by 10,000,000,000 for USD
 - Images referenced in prompts as `<IMAGE_0>`, `<IMAGE_1>`, etc.
 
-## Bug workflow
-When you identify and fix a bug:
-1. Create `issues/ISSUE-N.md` (next number in sequence) with sections: root cause, fix, key invariant.
-2. Add a one-line entry to the **Known issues log** below.
-3. Add the same entry to `CLAUDE.md` if it introduces a new non-obvious invariant.
+## Issue workflow
+Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.
+This is mandatory — do not skip it, even for small changes.
+
+For a **bug fix**, include: root cause, fix, key invariant.
+For a **feature**, include: what was added, API/Gradio behaviour, key invariants to preserve.
+
+After writing the file:
+1. Add a one-line entry to the **Known issues log** below (type prefix: bug or feature).
+2. Update `CLAUDE.md` if the change introduces or changes a non-obvious invariant.
 
 ## Known issues log
 Before making changes to review flow, project loading, or image persistence, read:
@@ -79,7 +85,9 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-7.md` — gr.Image without image_mode=None strips PNG alpha
 - `issues/ISSUE-8.md` — start_review failure silently wiped chatbot and gallery
 - `issues/ISSUE-9.md` — review chatbot cleared on every image generation (gr.update(value=[]) in _generate_images_for_ui)
-- `issues/ISSUE-10.md` — start_review called on first post-restart message, wiping history (review_context empty ≠ fresh start)
+- `issues/ISSUE-10.md` — [bug] start_review called on first post-restart message, wiping history (review_context empty ≠ fresh start)
+- `issues/ISSUE-11.md` — [feature] model-scoped resolution dropdown; resolution param only sent for grok-imagine-image-2.0
+- `issues/ISSUE-12.md` — [feature] generation cost display from cost_in_usd_ticks (÷10B → USD)
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
