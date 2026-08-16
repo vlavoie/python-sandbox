@@ -1,7 +1,7 @@
 # ISSUE-18: Review chat input not locking, no progress bar, input not clearing after send
 
 **Type:** Bug  
-**Status:** Fixed (attempt 5)  
+**Status:** Fixed (attempt 6)  
 **Files:** `src/pasokon/workflow_panel.py` → `_wire_events` → `send_message`
 
 ## Root Cause 1 — Duplicate component in outputs blocked locking
@@ -34,7 +34,7 @@ Gradio's built-in loading spinner disappears after the first yield of a generato
 
 **Attempt 3 (current):** Reverted to `gr.update(value="", interactive=False)` on first yield and `gr.update(value="", interactive=True)` on final yield. Now that the duplicate-outputs bug (Root Cause 1) is fully resolved and `_chat_loading` is gone from the outputs list, the `gr.update` dict is applied cleanly with no conflicts.
 
-## Root Cause 4 — Progress bar on all outputs + double "..." (attempt 4 regression)
+## Root Cause 4 — Progress bar on all outputs + double "..." (attempts 4–5 regression)
 
 `progress=gr.Progress()` in `send_message` attaches the GENERATING overlay to every component
 in the `outputs` list — chatbot, input, gallery, AND button all showed a progress bar.
@@ -43,15 +43,34 @@ Separately, the first yield included a manual `{"role": "assistant", "content": 
 message. Gradio 5's `gr.Chatbot` also renders its own native loading indicator for running
 generators. This produced two "..." at once.
 
-**Fix (attempt 5):** Removed `progress=gr.Progress()` from the function signature entirely.
-Removed the manual "..." from the first yield — Gradio's native chatbot pending indicator
-handles loading state on its own. The first yield now contains only the user message plus
-the input lock and button lock. No custom progress mechanism needed.
+**Fix (attempt 5):** Removed `progress=gr.Progress()`. Removed the manual "..." relying on
+Gradio's native chatbot pending indicator. However this removed all loading feedback (no "...")
+and brought back the 1px thin bar (Gradio's built-in generator progress line).
+
+## Root Cause 5 — gr.Progress() cannot be targeted; thin bar returned without it (attempt 6)
+
+`gr.Progress()` attaches to ALL components in `outputs` — there is no per-component targeting.
+Removing it brings back Gradio's built-in thin 1px progress line on all outputs.
+The double "..." in attempt 4 was our manual `"..."` text + Gradio's streaming cursor rendering
+on the same chatbot message bubble simultaneously.
+
+**Fix (attempt 6):** Split `send_message` into three chained events via `.then()`:
+1. `_send_start(msg)` — sync, instant: shows "..." in chatbot, locks input WITHOUT clearing
+   (so the next event can read the message), shows prior gallery, locks button.
+2. `_send_execute(msg, uploaded)` — sync, `show_progress="hidden"`: does the API call.
+   Outputs only `[chatbot, gallery]` — no input or button in outputs, so no progress bar
+   pollution on those components. The "..." is replaced with the real response.
+3. `_send_finish()` — sync, instant: clears and unlocks input and button.
+
+The "..." in step 1 is the only loading indicator. It comes from a sync (non-generator)
+event so Gradio's streaming cursor never activates — no duplicate.
 
 ## Key Invariants
 
 - Never list the same Gradio component twice in an `outputs` list — combine all property changes into one `gr.update(...)` per yield.
 - Do NOT use `progress=gr.Progress()` in `send_message` — it attaches the GENERATING overlay to every component in `outputs`, flooding the UI with progress bars.
-- Do NOT add a manual `{"role": "assistant", "content": "..."}` to the first yield — Gradio 5's `gr.Chatbot` already shows its own native pending indicator for running generators. Adding one manually produces two "..." at once.
+- Do NOT use a single generator function for `send_message` — `gr.Progress()` attaches to all outputs and the streaming cursor doubles the "...". Use the three-event `.then()` chain instead (see above).
+- The "..." must be yielded from a sync (non-generator) first event. A sync event has no streaming cursor, so the "..." appears exactly once.
+- `_send_start` must lock input WITHOUT clearing it (`gr.update(interactive=False)` only) so `_send_execute` can still read the message. `_send_finish` does the clear.
 - Do NOT use a custom `gr.HTML` bar as a progress substitute — it renders below the chatbox, not as an overlay, and the `visible` toggle is unreliable in Gradio 5.
 - `gr.update(value="", interactive=False)` works correctly once the outputs list has no duplicate components and no extra HTML component competing for output slots.

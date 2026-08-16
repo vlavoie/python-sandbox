@@ -621,18 +621,18 @@ class WorkflowPanel(ABC):
             outputs=[self._dup_confirm_row],
         )
 
-        _input_lock = gr.update(value="", interactive=False)
-        _input_unlock = gr.update(value="", interactive=True)
-        _btn_lock = gr.update(interactive=False)
-        _btn_unlock = gr.update(interactive=True)
+        def _send_start(msg):
+            prior_history = list(self.review_history)
+            prior_gallery = render_gallery_html(self.generated_images or [])
+            pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
+            # Lock input WITHOUT clearing so _send_execute can still read the message.
+            # _send_finish clears and unlocks after the API call completes.
+            return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
-        def send_message(msg, uploaded):
+        def _send_execute(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
-
-            user_turn = prior_history + [{"role": "user", "content": msg}]
-            yield user_turn, _input_lock, prior_gallery, _btn_lock
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -641,8 +641,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock
-                    return
+                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
                 self.review_context = ctx
@@ -651,24 +650,36 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock
-                    return
+                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            yield result[0], _input_unlock, gallery_html, _btn_unlock
+            return result[0], gallery_html
+
+        def _send_finish():
+            return gr.update(value="", interactive=True), gr.update(interactive=True)
+
+        _send_event_kwargs = dict(
+            inputs=[self.review_input, self._failed_upload],
+            outputs=[self.review_chatbot, self.failed_gallery],
+            show_progress="hidden",
+        )
+        _finish_event_kwargs = dict(
+            fn=_send_finish,
+            outputs=[self.review_input, self._send_btn],
+        )
 
         self._send_btn.click(
-            fn=send_message,
-            inputs=[self.review_input, self._failed_upload],
+            fn=_send_start,
+            inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        )
+        ).then(fn=_send_execute, **_send_event_kwargs).then(**_finish_event_kwargs)
         self.review_input.submit(
-            fn=send_message,
-            inputs=[self.review_input, self._failed_upload],
+            fn=_send_start,
+            inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        )
+        ).then(fn=_send_execute, **_send_event_kwargs).then(**_finish_event_kwargs)
         self._extract_btn.click(
             fn=self.extract_prompt,
             inputs=[],
