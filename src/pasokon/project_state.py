@@ -219,6 +219,7 @@ class ProjectState:
             self.chat_model = state.get("chat_model", "grok-4.20")
             self.image_model = state.get("image_model", "grok-imagine-image-pro")
             self.image_resolution = state.get("image_resolution", "auto")
+            (self.output_dir / ".last_project.txt").write_text(self.project_name)
 
             # New format: state["panels"]["fpv"] / state["panels"]["element"]
             # Legacy format: FPV state is flat at the top level (no "panels" key)
