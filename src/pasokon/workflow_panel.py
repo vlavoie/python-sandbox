@@ -527,6 +527,44 @@ class WorkflowPanel(ABC):
 
     # ── UI render ─────────────────────────────────────────────────────────
 
+    def _render_review_tab_content(self) -> None:
+        """Render the review tab UI components. Shared by all panels."""
+        with gr.Row():
+            self._failed_upload = gr.File(
+                label="Upload specific images to review (leave empty to use generated images)",
+                file_count="multiple",
+                type="filepath",
+            )
+        self.review_chatbot = gr.Chatbot(
+            label="Review Conversation",
+            height=500,
+            show_label=False,
+            bubble_full_width=False,
+            type="messages",
+        )
+        with gr.Row(equal_height=True):
+            self.review_input = gr.Textbox(
+                placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
+                lines=1,
+                max_lines=4,
+                scale=10,
+                show_label=False,
+                container=False,
+            )
+            self._send_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
+        self.failed_gallery = gr.HTML()
+        self._gallery_state = gr.State(value="")
+        self._chatbot_state = gr.State(value=[])
+        gr.Markdown("---")
+        gr.Markdown("**When satisfied with the conversation:**")
+        self._extract_btn = gr.Button(
+            "📤 Extract Final Prompt & Send to Generation Tab", variant="primary"
+        )
+
+    def _get_extract_outputs(self) -> List:
+        """Components updated by the Extract button. Override to redirect to a different target."""
+        return [self.prompt_box, self.panel_tabs]
+
     def render(self) -> None:
         """Build the inner three-tab UI within the current Gradio Blocks context."""
         with gr.Tabs(elem_id=f"{self.panel_id}_tabs") as self.panel_tabs:
@@ -560,37 +598,7 @@ class WorkflowPanel(ABC):
                 self.output_gallery = gr.HTML()
 
             with gr.Tab("🔍 Review & Correct", id=f"{self.panel_id}_review"):
-                with gr.Row():
-                    self._failed_upload = gr.File(
-                        label="Upload specific images to review (leave empty to use generated images)",
-                        file_count="multiple",
-                        type="filepath",
-                    )
-                self.review_chatbot = gr.Chatbot(
-                    label="Review Conversation",
-                    height=500,
-                    show_label=False,
-                    bubble_full_width=False,
-                    type="messages",
-                )
-                with gr.Row(equal_height=True):
-                    self.review_input = gr.Textbox(
-                        placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
-                        lines=1,
-                        max_lines=4,
-                        scale=10,
-                        show_label=False,
-                        container=False,
-                    )
-                    self._send_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
-                self.failed_gallery = gr.HTML()
-                self._gallery_state = gr.State(value="")
-                self._chatbot_state = gr.State(value=[])
-                gr.Markdown("---")
-                gr.Markdown("**When satisfied with the conversation:**")
-                self._extract_btn = gr.Button(
-                    "📤 Extract Final Prompt & Send to Generation Tab", variant="primary"
-                )
+                self._render_review_tab_content()
 
         self._wire_events()
 
@@ -638,6 +646,17 @@ class WorkflowPanel(ABC):
             fn=lambda: gr.update(visible=False),
             outputs=[self._dup_confirm_row],
         )
+
+        self._extract_btn.click(
+            fn=self.extract_prompt,
+            inputs=[],
+            outputs=self._get_extract_outputs(),
+        )
+
+        self._wire_review_events()
+
+    def _wire_review_events(self) -> None:
+        """Wire the send/submit 4-step chain. Called from _wire_events() and subclass overrides."""
 
         def _send_start(msg):
             prior_history = list(self.review_history)
@@ -711,8 +730,3 @@ class WorkflowPanel(ABC):
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
         ).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
-        self._extract_btn.click(
-            fn=self.extract_prompt,
-            inputs=[],
-            outputs=[self.prompt_box, self.panel_tabs],
-        )
