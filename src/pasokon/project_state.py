@@ -50,10 +50,12 @@ class ProjectState:
                 self.review_skill = f.read()
             with open(self.skill_dir / "fpv-pov-element.md", "r", encoding="utf-8", errors="replace") as f:
                 self.element_skill = f.read()
+            with open(self.skill_dir / "fpv-pov-finalize.md", "r", encoding="utf-8", errors="replace") as f:
+                self.finalize_skill = f.read()
         except FileNotFoundError as e:
             raise FileNotFoundError(
-                f"Skill files not found. Ensure fpv-pov-image.md, fpv-pov-review.md, and "
-                f"fpv-pov-element.md are in: {self.skill_dir}"
+                f"Skill files not found. Ensure fpv-pov-image.md, fpv-pov-review.md, "
+                f"fpv-pov-element.md, and fpv-pov-finalize.md are in: {self.skill_dir}"
             ) from e
 
         # App-level model preferences (persisted per project)

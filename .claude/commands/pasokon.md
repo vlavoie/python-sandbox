@@ -112,6 +112,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-16.md` — [feature] optional element base image (green zone template) for Phase 2 element fill
 - `issues/ISSUE-17.md` — [feature] duplicate prompt guard on Generate Images — inline confirm row blocks same-prompt resubmission
 - `issues/ISSUE-18.md` — [bug] review chat input not locking — duplicate component in outputs list; Gradio 5 only applies last update per component
+- `issues/ISSUE-19.md` — [feature] Finalize tab: one-click lighting/color pass via fpv-pov-finalize.md skill; no green zones, no review loop
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

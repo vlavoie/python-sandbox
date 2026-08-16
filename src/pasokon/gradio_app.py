@@ -12,6 +12,7 @@ from .grok_client import GrokClient
 from .project_state import ProjectState
 from .fpv_workflow import FPVWorkflowPanel
 from .element_workflow import ElementWorkflowPanel
+from .finalize_workflow import FinalizeWorkflowPanel
 _ASSETS = Path(__file__).parent
 _GALLERY_CSS = (_ASSETS / "gallery.css").read_text(encoding="utf-8")
 _GALLERY_JS  = (_ASSETS / "gallery.js").read_text(encoding="utf-8")
@@ -39,10 +40,12 @@ class FPVPOVApp:
         self.project_state = ProjectState()
         self.fpv_panel = FPVWorkflowPanel(self)
         self.element_panel = ElementWorkflowPanel(self)
+        self.finalize_panel = FinalizeWorkflowPanel(self)
         self.project_selector = None  # set during create_interface
 
         self.project_state.register_panel("fpv", self.fpv_panel)
         self.project_state.register_panel("element", self.element_panel)
+        self.project_state.register_panel("finalize", self.finalize_panel)
 
         # Auto-load last project
         try:
@@ -117,6 +120,7 @@ class FPVPOVApp:
             gr.update(choices=self.project_state.list_projects(), value=None),
             *self.fpv_panel.get_ui_restore_values(),
             *self.element_panel.get_ui_restore_values(),
+            *self.finalize_panel.get_ui_restore_values(),
             gr.update(value=self.project_state.chat_model),
         )
 
@@ -219,6 +223,11 @@ class FPVPOVApp:
                     gr.Markdown("### Generate isolated FPV elements for GIMP compositing")
                     self.element_panel.render()
 
+                # ── Tab 4: Finalize ────────────────────────────────────────
+                with gr.Tab("🏁 Finalize", id="tab_finalize"):
+                    gr.Markdown("### Final lighting & color pass — no structural changes")
+                    self.finalize_panel.render()
+
             # OUTPUTS_PROJECT must match what _build_project_outputs returns exactly.
             OUTPUTS_PROJECT = [
                 project_mgmt_status,
@@ -226,6 +235,7 @@ class FPVPOVApp:
                 self.project_selector,
                 *self.fpv_panel.get_ui_outputs(),
                 *self.element_panel.get_ui_outputs(),
+                *self.finalize_panel.get_ui_outputs(),
                 chat_model_dropdown,
             ]
 
