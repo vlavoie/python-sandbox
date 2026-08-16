@@ -79,6 +79,7 @@ After writing or updating the file, add or update the one-line entry in the **Kn
 Before editing `fpv-pov-image.md` or `fpv-pov-review.md`, read:
 - `tuning/TUNING-1.md` — standing FPV horizon defaults to frame top; must use "camera horizon — vanishing-point horizon — at exact vertical center". **TUNING-1b (appended):** downward-tilt FPV of shorter characters — horizon-at-center rule does NOT apply; use gaze direction ("looking up at me") and crown-of-head visibility as primary anchors instead
 - `tuning/TUNING-2.md` — finalize prompts must name art style first and describe the full scene as-is; "Starting from IMAGE_1 as unchanged base…" signals a delta and causes style drift
+- `tuning/TUNING-3.md` — viewer body parts must use first-person pronouns ("my hand", "I reach"); depersonalized language ("forearms extending", "viewer's arm") causes Aurora to treat them as a separate character's hands
 
 ## Issue workflow
 Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.

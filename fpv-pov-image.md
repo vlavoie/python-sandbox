@@ -47,10 +47,10 @@ The first sentence sets Aurora's dominant interpretation. It must contain:
 **Templates by camera direction:**
 
 Looking up (lying flat):
-> "First-person POV, lying flat and looking directly upward — [ceiling/sky element] fills the upper three-quarters of the frame, [held object: book/phone] in the mid-frame, narrow strip of upper chest at the very bottom edge."
+> "First-person POV, lying flat and looking directly upward — [ceiling/sky element] fills the upper three-quarters of the frame, [held object: book/phone] held in my hands in the mid-frame, narrow strip of my upper chest at the very bottom edge."
 
 Looking forward (standing or sitting at eye level):
-> "First-person POV at eye level looking forward, camera horizon — the vanishing-point horizon — at the exact vertical center of the frame — [primary scene element or person] fills the center and upper frame, [any body parts if applicable: hands/forearms] at the lower frame edge."
+> "First-person POV at eye level looking forward, camera horizon — the vanishing-point horizon — at the exact vertical center of the frame — [primary scene element or person] fills the center and upper frame, [if applicable: my hands/forearms] at the lower frame edge."
 
 **Standing FPV horizon rule:** For any standing or nearly-standing FPV, the viewer's eye level IS the compositional horizon, and it must be placed at the **exact vertical center** of the frame. Aurora defaults to placing the horizon high (top 20–30% of frame), which makes all subjects above eye level appear enormous. Always anchor it explicitly: "camera horizon — the eye-level vanishing point — at the exact vertical center of the frame." Objects at eye height sit at the frame center; objects above (e.g. a slightly-taller person's face) sit in the upper half; objects below sit in the lower half.
 
@@ -65,7 +65,7 @@ Looking forward (standing or sitting at eye level):
 
 - **Character's gaze direction is the strongest anchor.** "Looking up at me" / "face tilted upward to meet my gaze" tells Aurora the spatial relationship more reliably than any percentage or horizon position.
 - **Describe seeing the top of their head.** "Top and crown of her silver hair clearly visible from above" confirms the downward angle directly. Aurora will not add this spontaneously.
-- **Arm extends downward, not forward.** If the viewer's arm is visible, it reaches "downward from the lower frame edge" toward an object at the character's chest or waist level — not horizontally.
+- **My arm extends downward, not forward.** I reach downward from the lower frame edge toward an object at the character's chest or waist level — not horizontally.
 - **Floor is visible at the character's feet.** This confirms the tilt and prevents Aurora from cropping the scene too tight around the face.
 - **The character appears more fully in frame.** Looking down at a shorter person from a distance, you see them from head to roughly knees or waist — not a tight face crop. If the prompt produces a face close-up, the scene description is too thin and Aurora is defaulting to portrait framing.
 - **Frame layout for a meaningfully shorter character (e.g. ~20–30 cm height difference):**
@@ -75,10 +75,10 @@ Looking forward (standing or sitting at eye level):
   - Ceiling: still visible in the upper portion (Aurora removes it if not mentioned)
 
 Looking slightly downward at a shorter person (taller viewer):
-> "First-person POV standing tall, looking slightly downward — [shorter character] looking up at me from below, her face tilted upward at the lower-center of the frame, the top and crown of her [hair] clearly visible from above, her [clothing and torso] and [any held object] filling the center band, floor visible at her feet in the lower frame. [Viewer arm/hand] extending downward from the bottom frame edge reaching toward [object at her chest/waist level]."
+> "First-person POV standing tall, looking slightly downward — [shorter character] looking up at me from below, her face tilted upward at the lower-center of the frame, the top and crown of her [hair] clearly visible from above, her [clothing and torso] and [any held object] filling the center band, floor visible at her feet in the lower frame. My [arm/hand] extending downward from the bottom frame edge reaching toward [object at her chest/waist level]."
 
 Looking straight down (floor/objects at feet):
-> "First-person POV looking straight down from standing height — [floor/surface/object] fills the upper and middle frame, [feet/legs] at the bottom."
+> "First-person POV looking straight down from standing height — [floor/surface/object] fills the upper and middle frame, my feet/legs at the bottom."
 
 ---
 
@@ -100,10 +100,12 @@ The more precisely you fill the frame with real content, the less room Aurora ha
 
 **What body parts are visible:** Describe only the parts that ARE visible and exactly where they sit. Do not mention body parts that should not appear — simply do not describe them. Aurora fills the frame with what you specify; what you don't specify doesn't exist.
 
+**Always use first-person pronouns for viewer body parts.** Write "my hand", "my forearm", "I reach toward" — not "the hand", "forearms extending from the frame", or "viewer's arm". First-person possessives are the strongest FPV signal and match the visual novel / game CG language Aurora was trained on. Depersonalized language ("hands extending from the lower frame") causes Aurora to treat them as a separate character's hands rather than the viewer's own.
+
 **Correct visibility by camera direction:**
-- Looking up while lying flat: hands holding object (mid-frame), narrow upper chest edge at very bottom (partially occluded by held object)
-- Looking forward: hands or forearms possibly at lower frame edge only; scene fills the upper and center frame
-- Looking down: feet/lower legs at bottom of frame; floor/surface fills upper and center
+- Looking up while lying flat: my hands holding object (mid-frame), narrow strip of my upper chest at very bottom (partially occluded by held object)
+- Looking forward: my hands or forearms possibly at lower frame edge only; scene fills the upper and center frame
+- Looking down: my feet/lower legs at bottom of frame; floor/surface fills upper and center
 
 ---
 
@@ -121,7 +123,7 @@ That is sufficient. Do not repeat it.
 **Phase 1:** Do not mention hair at all — no request, no description, no "no hair". Simply write the scene without it. Aurora will not add hair if it is not described.
 
 **Phase 2 green-zone addition:** Describe the hair as a frame-border detail — the camera sits within the hairline, so the hair is the geometric border of the frame, not something moving into it:
-> "The left and right frame borders reveal a [X]%-wide strip of the viewer's own [style] hair — a natural frame-border detail from first-person perspective where the camera sits just behind the eyes within the hairline. The strip is [color, texture, style matching IMAGE_0], wider on the [left/right] side due to [context e.g. head angle]."
+> "The left and right frame borders reveal a [X]%-wide strip of my own [style] hair — a natural frame-border detail from first-person perspective where the camera sits just behind the eyes within the hairline. The strip is [color, texture, style matching IMAGE_0], wider on the [left/right] side due to [context e.g. head angle]."
 
 Avoid "strands entering from the frame edges" — Aurora maps this to characters appearing at the sides of a scene. Describe it as a static frame-border property.
 
@@ -168,6 +170,6 @@ Fill every sentence with specific visual content — materials, colors, lighting
 
 Output **only** the finished prompt inside a single markdown code block (``` ... ```). No explanations outside the code block.
 
-**Critical:** Do not prefix the prompt with "I am the character," first-person narrator framing, or any explanatory preamble. Do not append ban lists. The prompt begins with the spatial description — nothing before, nothing after the code block.
+**Critical:** Do not open the prompt with meta-references like "I am the character from IMAGE_0" or narrative preambles. The prompt begins with the spatial description — nothing before, nothing after the code block. Do not append ban lists. First-person possessives for viewer body parts ("my hand", "my forearm", "I reach toward") ARE correct and required — they are the primary FPV signal, not preamble.
 
 Wait for my scene description (and the attached character reference).

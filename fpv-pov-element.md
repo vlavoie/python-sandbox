@@ -39,7 +39,7 @@ Describe what occupies each frame region. Do not describe camera position or per
 **Hair fringe / bob (most common):**
 The hair occupies the frame borders. Background fills the center.
 
-> "[Hair description] occupying the upper [X]% of the frame and [X]%-wide panels along both frame borders, [background] filling the center and all remaining area. [Color matching IMAGE_0]. Art style and color exactly matching IMAGE_0. Only the hair on [background]."
+> "My [hair description] occupying the upper [X]% of the frame and [X]%-wide panels along both frame borders, [background] filling the center and all remaining area. [Color matching IMAGE_0]. Art style and color exactly matching IMAGE_0. Only my hair on [background]."
 
 Typical values: bangs 15–20% of frame height, side panels 12–18% wide.
 
@@ -60,7 +60,7 @@ Use this template when the hair has long trailing sections, side tails, ribbon t
 
 The fringe/bangs follow the same rule as a bob (upper X% of frame). Long strands and tails follow the frame borders downward — they are border details, not centered objects. A headdress or hair accessory appears at the very top center edge.
 
-> "[Bangs/fringe description] occupying the upper [X]% of the frame, camera positioned just behind the eyes within the hairline — only the peripheral hair at the frame borders is naturally visible from this first-person interior viewpoint. Long flowing [hair description] lines the left frame border as a [X]%-wide strip of loose strands from the upper-left corner downward, and the right frame border as a [X]%-wide strip from the upper-right corner downward, thinning toward the bottom. [Headdress/accessory] appears at the top center edge of the upper border. [Background] fills the entire center and lower frame representing the open forward view. Hair color, strand texture, ribbons, and accessories exactly matching IMAGE_0. Only hair and accessories visible; [background] everywhere else."
+> "My [bangs/fringe description] occupying the upper [X]% of the frame, camera positioned just behind my eyes within my hairline — only my peripheral hair at the frame borders is naturally visible from this first-person interior viewpoint. My long flowing [hair description] lines the left frame border as a [X]%-wide strip of loose strands from the upper-left corner downward, and the right frame border as a [X]%-wide strip from the upper-right corner downward, thinning toward the bottom. My [headdress/accessory] appears at the top center edge of the upper border. [Background] fills the entire center and lower frame representing the open forward view. Hair color, strand texture, ribbons, and accessories exactly matching IMAGE_0. Only my hair and accessories visible; [background] everywhere else."
 
 Typical values: bangs 15–20%, side border strips 8–14% wide at top narrowing to 4–6% at mid-frame.
 
@@ -71,25 +71,25 @@ If the hair is asymmetric (head turned), state different widths per side explici
 ---
 
 **Forearms / hands:**
-Arms extend from the lower portion of the frame downward, as if the viewer is looking at their own hands.
+My arms extend from the lower portion of the frame downward, as if I am looking at my own hands.
 
-> "[Arm/hand description] occupying the lower [X]% of the frame — forearms extending from the lower-left and lower-right corners toward center-bottom, hands meeting at the bottom edge. [Background] fills the upper [X]%. Skin tone, nail color, sleeve, and clothing exactly matching IMAGE_0. Only the arms on [background]."
+> "My [arm/hand description] occupying the lower [X]% of the frame — my forearms extending from the lower-left and lower-right corners toward center-bottom, my hands meeting at the bottom edge. [Background] fills the upper [X]%. Skin tone, nail color, sleeve, and clothing exactly matching IMAGE_0. Only my arms on [background]."
 
 Typical values: arms occupy lower 40–60% of frame.
 
 ---
 
 **Shoulders:**
-The shoulder curve appears at the outer lower corners of the frame.
+My shoulder curves appear at the outer lower corners of the frame.
 
-> "[Shoulder/upper arm description] occupying the lower outer corners of the frame — left shoulder at lower-left, right shoulder at lower-right, each [X]% wide. [Background] fills the center and upper frame. Clothing, fabric, and skin tone exactly matching IMAGE_0. Only the shoulders on [background]."
+> "My [shoulder/upper arm description] occupying the lower outer corners of the frame — my left shoulder at lower-left, my right shoulder at lower-right, each [X]% wide. [Background] fills the center and upper frame. Clothing, fabric, and skin tone exactly matching IMAGE_0. Only my shoulders on [background]."
 
 ---
 
 **Chest / décolletage strip:**
-A narrow strip at the very bottom center.
+A narrow strip of my chest at the very bottom center.
 
-> "[Chest/clothing description] as a horizontal strip occupying the bottom [X]% of the frame, centered. [Background] fills the upper [X]%. Clothing, skin tone, and neckline exactly matching IMAGE_0. Only the chest strip on [background]."
+> "My [chest/clothing description] as a horizontal strip occupying the bottom [X]% of the frame, centered. [Background] fills the upper [X]%. Clothing, skin tone, and neckline exactly matching IMAGE_0. Only my chest strip on [background]."
 
 Typical values: 10–20% of frame height.
 
