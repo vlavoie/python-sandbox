@@ -595,7 +595,7 @@ class WorkflowPanel(ABC):
                     self._gen_anyway_btn = gr.Button("Generate anyway", variant="secondary", size="sm")
                     self._dup_cancel_btn = gr.Button("Cancel", size="sm")
                 self._work_item_label = gr.Markdown(value=self._work_item_status())
-                self.output_gallery = gr.HTML()
+                self.output_gallery = gr.HTML(min_height=150)
 
             with gr.Tab("🔍 Review & Correct", id=f"{self.panel_id}_review"):
                 self._render_review_tab_content()
@@ -618,6 +618,10 @@ class WorkflowPanel(ABC):
         self.image_resolution_dropdown.change(fn=self.app.update_image_resolution, inputs=[self.image_resolution_dropdown])
 
         self._gen_prompt_btn.click(
+            fn=lambda: gr.update(interactive=False, value="⏳ Generating prompt..."),
+            outputs=[self._gen_prompt_btn],
+            show_progress="hidden",
+        ).then(
             fn=self.do_generate_prompt,
             inputs=self.get_prompt_tab_inputs(),
             outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
