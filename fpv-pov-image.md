@@ -61,8 +61,24 @@ Looking forward (standing or sitting at eye level):
 - Character's head top = roughly one-third from the top
 - Ceiling above = top third of the frame (not a narrow 15–18% strip — that forces the head too large)
 
-Looking down:
-> "First-person POV looking downward from standing height — [floor/surface/object] fills the upper and middle frame, [feet/legs] at the bottom."
+**Shorter character / downward tilt — do NOT use "camera horizon at center":** When the viewer is meaningfully taller and looking slightly down, the straight-ahead horizon rule does not apply. Aurora defaults to eye-level face-forward regardless — fight this with explicit spatial anchors:
+
+- **Character's gaze direction is the strongest anchor.** "Looking up at me" / "face tilted upward to meet my gaze" tells Aurora the spatial relationship more reliably than any percentage or horizon position.
+- **Describe seeing the top of their head.** "Top and crown of her silver hair clearly visible from above" confirms the downward angle directly. Aurora will not add this spontaneously.
+- **Arm extends downward, not forward.** If the viewer's arm is visible, it reaches "downward from the lower frame edge" toward an object at the character's chest or waist level — not horizontally.
+- **Floor is visible at the character's feet.** This confirms the tilt and prevents Aurora from cropping the scene too tight around the face.
+- **The character appears more fully in frame.** Looking down at a shorter person from a distance, you see them from head to roughly knees or waist — not a tight face crop. If the prompt produces a face close-up, the scene description is too thin and Aurora is defaulting to portrait framing.
+- **Frame layout for a meaningfully shorter character (e.g. ~20–30 cm height difference):**
+  - Character's eyes: roughly 35–45% from the bottom of the frame
+  - Character's head top (crown): roughly 50–55% from the bottom
+  - Floor at feet: visible in the lower 25–30% of frame
+  - Ceiling: still visible in the upper portion (Aurora removes it if not mentioned)
+
+Looking slightly downward at a shorter person (taller viewer):
+> "First-person POV standing tall, looking slightly downward — [shorter character] looking up at me from below, her face tilted upward at the lower-center of the frame, the top and crown of her [hair] clearly visible from above, her [clothing and torso] and [any held object] filling the center band, floor visible at her feet in the lower frame. [Viewer arm/hand] extending downward from the bottom frame edge reaching toward [object at her chest/waist level]."
+
+Looking straight down (floor/objects at feet):
+> "First-person POV looking straight down from standing height — [floor/surface/object] fills the upper and middle frame, [feet/legs] at the bottom."
 
 ---
 
