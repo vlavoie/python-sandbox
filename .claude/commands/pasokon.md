@@ -78,6 +78,7 @@ After writing or updating the file, add or update the one-line entry in the **Kn
 ## Known tuning log
 Before editing `fpv-pov-image.md` or `fpv-pov-review.md`, read:
 - `tuning/TUNING-1.md` — standing FPV horizon defaults to frame top; must use "camera horizon — vanishing-point horizon — at exact vertical center"
+- `tuning/TUNING-2.md` — finalize prompts must name art style first and describe the full scene as-is; "Starting from IMAGE_1 as unchanged base…" signals a delta and causes style drift
 
 ## Issue workflow
 Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.
