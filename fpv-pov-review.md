@@ -42,19 +42,23 @@ Examples of the correct correction logic:
 3. **Posture drift:** Lying becomes propped, standing becomes reclining.
    - Spatial fix: Add a posture anchor in the first sentence. "First-person POV, lying flat looking directly upward" or "standing, camera at eye level looking forward."
 
-4. **Chest domination:** Chest fills the majority of the frame when it shouldn't.
+4. **Character appears disproportionately tall/towering:** A character who should be only slightly taller reads as a giant filling the frame.
+   - Root cause: "eye level" language alone does not place the horizon in the frame. Aurora defaults to the horizon near the top of the frame, so anything above eye level (the character's face) fills a huge proportion of the image.
+   - Spatial fix: Anchor the camera horizon explicitly using photography terms in the opening sentence: "camera horizon — the eye-level vanishing point — pinned exactly at the vertical center of the frame." Then position the character relative to that center line. For a slightly-taller character: chin at or just above center, face in a narrow 10–15% band above center, head top at roughly one-third from the top, ceiling filling the upper third. Do NOT set ceiling to a narrow 15–18% strip — that forces the face into a 32% slab that reads as towering.
+
+5. **Chest domination:** Chest fills the majority of the frame when it shouldn't.
    - Spatial fix: Describe the scene content that fills the upper and center frame. End with: "A narrow strip of upper chest appears only at the very bottom edge, partially occluded by [held object]."
 
-5. **Hair problems:** Visible head silhouette, side curtain hair, hair below eye level.
+6. **Hair problems:** Visible head silhouette, side curtain hair, hair below eye level.
    - For Phase 1: Remove all hair mentions from the prompt — not even a request. If hair appeared despite no mention, state explicitly what body parts ARE visible at their frame positions, and add "only [held object], hands, and the narrow chest edge are visible."
    - Never use floor, mop, pile, or downward-hair language — even as a ban. Describe hair only as peripheral/edge/entering frame from the sides.
 
-6. **Manipulated object shows wrong motion direction:** A cloth, towel, sheet, or other thrown/snapped object appears to hang, droop, or fold instead of billow or rise.
+7. **Manipulated object shows wrong motion direction:** A cloth, towel, sheet, or other thrown/snapped object appears to hang, droop, or fold instead of billow or rise.
    - The shape of the object in the image IS the motion. A downward arch = pulling/folding. An upward billow = throwing/snapping. Aurora reads the geometry of the described shape and generates that shape — the action verb alone does not override it.
    - Spatial fix: Describe the object's geometry explicitly in terms of direction. "The cloth billows upward from the hands, its peak reaching above the hands" produces an upward throw. "The cloth arches over the table" produces a lateral spread. "The cloth hangs from the hands" produces a droop. Choose the geometry that matches the intended motion.
    - The hands and the object peak must be vertically separated: "hands in the lower frame gripping the near edge, cloth peak rising above mid-frame" reads as a throw; "hands and cloth at the same height" reads as holding.
 
-7. **Grounding surface disappears behind foreground object:** A table, floor, or other reference surface that establishes spatial depth is fully occluded by the foreground object (cloth, hands, body).
+8. **Grounding surface disappears behind foreground object:** A table, floor, or other reference surface that establishes spatial depth is fully occluded by the foreground object (cloth, hands, body).
    - A surface that grounds the scene must have at least a narrow visible strip in the frame. Without it, the scene loses depth and spatial read.
    - Spatial fix: Explicitly name the surface and its position: "the table surface visible as a narrow strip at the bottom [X]% of the frame." If the foreground object risks covering it, reduce the object's described frame coverage so the surface strip remains visible. Do not omit the surface entirely from the spatial description.
 

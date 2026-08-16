@@ -50,7 +50,16 @@ Looking up (lying flat):
 > "First-person POV, lying flat and looking directly upward — [ceiling/sky element] fills the upper three-quarters of the frame, [held object: book/phone] in the mid-frame, narrow strip of upper chest at the very bottom edge."
 
 Looking forward (standing or sitting at eye level):
-> "First-person POV at eye level looking forward — [primary scene element or person] fills the center and upper frame, [any body parts if applicable: hands/forearms] at the lower frame edge."
+> "First-person POV at eye level looking forward, camera horizon — the vanishing-point horizon — at the exact vertical center of the frame — [primary scene element or person] fills the center and upper frame, [any body parts if applicable: hands/forearms] at the lower frame edge."
+
+**Standing FPV horizon rule:** For any standing or nearly-standing FPV, the viewer's eye level IS the compositional horizon, and it must be placed at the **exact vertical center** of the frame. Aurora defaults to placing the horizon high (top 20–30% of frame), which makes all subjects above eye level appear enormous. Always anchor it explicitly: "camera horizon — the eye-level vanishing point — at the exact vertical center of the frame." Objects at eye height sit at the frame center; objects above (e.g. a slightly-taller person's face) sit in the upper half; objects below sit in the lower half.
+
+**Height and scale — slightly-taller character composition:** If a character is only slightly taller than the viewer (chin at viewer's eye level), the composition should reflect:
+- Viewer's eye level = exact vertical center
+- Character's chin = at or just above center
+- Character's face = a narrow 10–15% band above center (NOT a large slab filling the upper third)
+- Character's head top = roughly one-third from the top
+- Ceiling above = top third of the frame (not a narrow 15–18% strip — that forces the head too large)
 
 Looking down:
 > "First-person POV looking downward from standing height — [floor/surface/object] fills the upper and middle frame, [feet/legs] at the bottom."
