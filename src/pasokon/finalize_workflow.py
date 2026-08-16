@@ -124,19 +124,26 @@ class FinalizeWorkflowPanel(WorkflowPanel):
         client = self.app.client
         ps = self.app.project_state
 
+        _noop_prompt = gr.update()
+        _done_btn = gr.update(value="✨ Finalize Image", interactive=True)
+        _busy_btn_prompt = gr.update(value="⏳ Generating prompt...", interactive=False)
+        _busy_btn_image = gr.update(value="⏳ Generating image...", interactive=False)
+        _cur_gallery = render_gallery_html(self.generated_images or [])
+        _cur_status = gr.update(value=self._work_item_status())
+
         if not client:
-            yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="✨ Finalize Image", interactive=True)
+            yield _cur_gallery, _cur_status, _done_btn, _noop_prompt
             return
         if source_image:
             self.source_image_path = ps.save_uploaded_file(source_image)
         if not self.source_image_path:
-            yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="✨ Finalize Image", interactive=True)
+            yield _cur_gallery, _cur_status, _done_btn, _noop_prompt
             return
         if not self.get_reference_image_path():
-            yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="✨ Finalize Image", interactive=True)
+            yield _cur_gallery, _cur_status, _done_btn, _noop_prompt
             return
 
-        yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="⏳ Generating prompt...", interactive=False)
+        yield _cur_gallery, _cur_status, _busy_btn_prompt, _noop_prompt
 
         self._start_new_prompt()
         self.notes = notes or ""
@@ -157,12 +164,12 @@ class FinalizeWorkflowPanel(WorkflowPanel):
             )
         except Exception as e:
             print(f"\nERROR IN FINALIZE PROMPT GENERATION:\n{e}\n")
-            yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="✨ Finalize Image", interactive=True)
+            yield _cur_gallery, _cur_status, _done_btn, _noop_prompt
             return
 
         self.current_prompt = prompt
 
-        yield render_gallery_html(self.generated_images or []), gr.update(value=self._work_item_status()), gr.update(value="⏳ Generating image...", interactive=False)
+        yield _cur_gallery, _cur_status, _busy_btn_image, gr.update(value=prompt)
 
         r = ps.image_resolution if ps.image_resolution != "auto" else None
 
@@ -178,7 +185,7 @@ class FinalizeWorkflowPanel(WorkflowPanel):
         gallery_html = render_gallery_html(images or self.generated_images or [])
         ps.save_project_state()
         progress(1.0, desc="Done")
-        yield gallery_html, gr.update(value=self._work_item_status()), gr.update(value="✨ Finalize Image", interactive=True)
+        yield gallery_html, gr.update(value=self._work_item_status()), _done_btn, gr.update(value=prompt)
 
     # ── persistence ───────────────────────────────────────────────────────
 
@@ -199,6 +206,7 @@ class FinalizeWorkflowPanel(WorkflowPanel):
             self._work_item_label,
             self.review_chatbot,
             self.failed_gallery,
+            self.prompt_box,
         ]
 
     def get_ui_restore_values(self) -> List:
@@ -208,6 +216,7 @@ class FinalizeWorkflowPanel(WorkflowPanel):
             gr.update(value=self._work_item_status()),
             gr.update(value=self.review_history),
             gr.update(value=render_gallery_html(review_images)),
+            gr.update(value=self.current_prompt),
         ]
 
     # ── render ────────────────────────────────────────────────────────────
@@ -236,6 +245,13 @@ class FinalizeWorkflowPanel(WorkflowPanel):
                 self._finalize_btn = gr.Button("✨ Finalize Image", variant="primary")
                 self._work_item_label = gr.Markdown(value=self._work_item_status())
                 self.output_gallery = gr.HTML()
+                self.prompt_box = gr.Textbox(
+                    label="Generated Prompt",
+                    lines=4,
+                    max_lines=8,
+                    interactive=False,
+                    placeholder="The auto-generated prompt will appear here after finalization.",
+                )
 
             with gr.Tab("🔍 Review & Correct", id="finalize_review"):
                 self._render_review_tab_content()
@@ -246,7 +262,7 @@ class FinalizeWorkflowPanel(WorkflowPanel):
         self._finalize_btn.click(
             fn=self._do_finalize,
             inputs=[self._source_image, self._notes_box],
-            outputs=[self.output_gallery, self._work_item_label, self._finalize_btn],
+            outputs=[self.output_gallery, self._work_item_label, self._finalize_btn, self.prompt_box],
         )
         self._source_image.change(
             fn=self._on_source_change,
