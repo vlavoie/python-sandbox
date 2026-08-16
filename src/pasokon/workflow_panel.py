@@ -558,7 +558,7 @@ class WorkflowPanel(ABC):
                     bubble_full_width=False,
                     type="messages",
                 )
-                self._chat_loading = gr.HTML(value="", visible=False)
+                self._chat_loading = gr.HTML(value="")
                 with gr.Row(equal_height=True):
                     self.review_input = gr.Textbox(
                         placeholder="Describe issues or say 'review these images'. Shift+Enter for new line.",
@@ -623,8 +623,6 @@ class WorkflowPanel(ABC):
             outputs=[self._dup_confirm_row],
         )
 
-        _input_lock = gr.update(value="", interactive=False)
-        _input_unlock = gr.update(value="", interactive=True)
         _btn_lock = gr.update(interactive=False)
         _btn_unlock = gr.update(interactive=True)
         _loading_html = (
@@ -634,17 +632,15 @@ class WorkflowPanel(ABC):
             '<style>@keyframes pasokon-chat-progress{'
             '0%{transform:translateX(-150%)}100%{transform:translateX(400%)}}</style>'
         )
-        _loading_show = gr.update(visible=True, value=_loading_html)
-        _loading_hide = gr.update(visible=False, value="")
 
         def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
-            # Show user message + thinking placeholder; lock input while waiting.
+            # Show user message + thinking placeholder; lock button, show progress bar.
             pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
-            yield pending, _input_lock, prior_gallery, _btn_lock, _loading_show
+            yield pending, "", prior_gallery, _btn_lock, _loading_html
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -653,7 +649,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock, _loading_hide
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _btn_unlock, ""
                     return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
@@ -663,13 +659,13 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock, _loading_hide
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _btn_unlock, ""
                     return
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            yield result[0], _input_unlock, gallery_html, _btn_unlock, _loading_hide
+            yield result[0], "", gallery_html, _btn_unlock, ""
 
         self._send_btn.click(
             fn=send_message,

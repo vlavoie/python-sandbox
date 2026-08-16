@@ -73,8 +73,10 @@ This is mandatory — do not skip it, even for small changes.
 For a **bug fix**, include: root cause, fix, key invariant.
 For a **feature**, include: what was added, API/Gradio behaviour, key invariants to preserve.
 
-After writing the file:
-1. Add a one-line entry to the **Known issues log** below (type prefix: bug or feature).
+**When a fix takes multiple attempts** (bug persists after first fix, approach changes, new root cause found), update the existing issue file in place — do not create a new one. The issue file is a living record: append the new root cause and fix under a new numbered section, and update the key invariants. This is especially important for iterative UI bugs where the first fix is incomplete.
+
+After writing or updating the file:
+1. Add or update the one-line entry in the **Known issues log** below (type prefix: bug or feature).
 2. Update `CLAUDE.md` if the change introduces or changes a non-obvious invariant.
 
 ## Known issues log
