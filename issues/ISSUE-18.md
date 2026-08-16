@@ -1,7 +1,7 @@
 # ISSUE-18: Review chat input not locking, no progress bar, input not clearing after send
 
 **Type:** Bug  
-**Status:** Fixed (attempt 6)  
+**Status:** Fixed (attempt 7)  
 **Files:** `src/pasokon/workflow_panel.py` → `_wire_events` → `send_message`
 
 ## Root Cause 1 — Duplicate component in outputs blocked locking
@@ -53,6 +53,20 @@ and brought back the 1px thin bar (Gradio's built-in generator progress line).
 Removing it brings back Gradio's built-in thin 1px progress line on all outputs.
 The double "..." in attempt 4 was our manual `"..."` text + Gradio's streaming cursor rendering
 on the same chatbot message bubble simultaneously.
+
+**Fix (attempt 6):** Split `send_message` into three chained events via `.then()`. Progress still absent because `show_progress="hidden"` was on `_send_execute`.
+
+## Root Cause 6 — Progress overlay needed on chatbot only (attempt 7)
+
+`gr.Progress()` overlays ALL visual components in `outputs`. Targeting it to the chatbot alone
+requires keeping `gr.State` as the only co-output, since state has no visual representation.
+
+**Fix (attempt 7):** Four chained events:
+1. `_send_start(msg)` — sync: "...", lock input (no clear), prior gallery, lock button
+2. `_send_execute(msg, uploaded, progress=gr.Progress())` — outputs `[chatbot, _gallery_state]`.
+   `gr.Progress()` overlays only the chatbot; the state has no UI so no visible bar there.
+3. `_flush_gallery(gallery_html)` — sync, `show_progress="hidden"`: copies state → `failed_gallery`
+4. `_send_finish()` — sync: clears and unlocks input and button
 
 **Fix (attempt 6):** Split `send_message` into three chained events via `.then()`:
 1. `_send_start(msg)` — sync, instant: shows "..." in chatbot, locks input WITHOUT clearing

@@ -568,6 +568,7 @@ class WorkflowPanel(ABC):
                     )
                     self._send_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
                 self.failed_gallery = gr.HTML()
+                self._gallery_state = gr.State(value="")
                 gr.Markdown("---")
                 gr.Markdown("**When satisfied with the conversation:**")
                 self._extract_btn = gr.Button(
@@ -629,10 +630,11 @@ class WorkflowPanel(ABC):
             # _send_finish clears and unlocks after the API call completes.
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
-        def _send_execute(msg, uploaded):
+        def _send_execute(msg, uploaded, progress=gr.Progress()):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
+            progress(0, desc="Waiting for response...")
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -657,12 +659,22 @@ class WorkflowPanel(ABC):
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
             return result[0], gallery_html
 
+        def _flush_gallery(gallery_html):
+            return gallery_html
+
         def _send_finish():
             return gr.update(value="", interactive=True), gr.update(interactive=True)
 
+        # _send_execute outputs [chatbot, _gallery_state]: gr.Progress() overlays only the
+        # chatbot (gr.State has no visual). A hidden .then() flushes state → failed_gallery.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self.failed_gallery],
+            outputs=[self.review_chatbot, self._gallery_state],
+        )
+        _flush_event_kwargs = dict(
+            fn=_flush_gallery,
+            inputs=[self._gallery_state],
+            outputs=[self.failed_gallery],
             show_progress="hidden",
         )
         _finish_event_kwargs = dict(
@@ -674,12 +686,12 @@ class WorkflowPanel(ABC):
             fn=_send_start,
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        ).then(fn=_send_execute, **_send_event_kwargs).then(**_finish_event_kwargs)
+        ).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
         self.review_input.submit(
             fn=_send_start,
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        ).then(fn=_send_execute, **_send_event_kwargs).then(**_finish_event_kwargs)
+        ).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
         self._extract_btn.click(
             fn=self.extract_prompt,
             inputs=[],
