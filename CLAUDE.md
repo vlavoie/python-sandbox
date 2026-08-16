@@ -6,6 +6,8 @@ This is a Gradio + xAI Aurora FPV POV image generation app.
 1. Run `/pasokon` to load the full project context and architecture notes
 2. Check `issues/` for any relevant known bugs before touching the review flow,
    project loading logic, or image persistence
+3. Check `tuning/` for prompt/skill adjustments before editing `fpv-pov-image.md`,
+   `fpv-pov-review.md`, or writing any generation prompts
 
 ## Project layout
 ```
@@ -19,6 +21,7 @@ src/pasokon/
   gallery_widget.py   — render_gallery_html (base64 inline HTML thumbnails)
 
 issues/               — catalogued bugs with root cause and fix notes
+tuning/               — model/prompt adjustments to fpv-pov-image.md and fpv-pov-review.md
 .claude/commands/
   pasokon.md          — /pasokon skill: full architecture + invariants
 ```

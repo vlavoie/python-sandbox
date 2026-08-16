@@ -626,15 +626,13 @@ class WorkflowPanel(ABC):
         _btn_lock = gr.update(interactive=False)
         _btn_unlock = gr.update(interactive=True)
 
-        def send_message(msg, uploaded, progress=gr.Progress()):
+        def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
-            pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
-            yield pending, _input_lock, prior_gallery, _btn_lock
-
-            progress(0, desc="Waiting for response...")
+            user_turn = prior_history + [{"role": "user", "content": msg}]
+            yield user_turn, _input_lock, prior_gallery, _btn_lock
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue

@@ -66,6 +66,19 @@ The save must happen AFTER all state mutations — never before.
 - `cost_in_usd_ticks` in response `usage`: divide by 10,000,000,000 for USD
 - Images referenced in prompts as `<IMAGE_0>`, `<IMAGE_1>`, etc.
 
+## Tuning workflow
+Create a `tuning/TUNING-N.md` (next number in sequence) for **every prompt or skill adjustment** — changes to `fpv-pov-image.md`, `fpv-pov-review.md`, or prompt-engineering rules.
+
+For each tuning entry, include: the problem observed, what failed and why (root cause in Aurora's behavior), the fix applied (exact skill changes), and the key rule going forward.
+
+**When the same failure resurfaces**, update the existing tuning file in place — append the new observation under a new section. A tuning file is a living record of how to handle a specific model behavior.
+
+After writing or updating the file, add or update the one-line entry in the **Known tuning log** below.
+
+## Known tuning log
+Before editing `fpv-pov-image.md` or `fpv-pov-review.md`, read:
+- `tuning/TUNING-1.md` — standing FPV horizon defaults to frame top; must use "camera horizon — vanishing-point horizon — at exact vertical center"
+
 ## Issue workflow
 Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.
 This is mandatory — do not skip it, even for small changes.

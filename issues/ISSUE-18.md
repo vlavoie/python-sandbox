@@ -1,7 +1,7 @@
 # ISSUE-18: Review chat input not locking, no progress bar, input not clearing after send
 
 **Type:** Bug  
-**Status:** Fixed (attempt 4)  
+**Status:** Fixed (attempt 5)  
 **Files:** `src/pasokon/workflow_panel.py` → `_wire_events` → `send_message`
 
 ## Root Cause 1 — Duplicate component in outputs blocked locking
@@ -34,9 +34,24 @@ Gradio's built-in loading spinner disappears after the first yield of a generato
 
 **Attempt 3 (current):** Reverted to `gr.update(value="", interactive=False)` on first yield and `gr.update(value="", interactive=True)` on final yield. Now that the duplicate-outputs bug (Root Cause 1) is fully resolved and `_chat_loading` is gone from the outputs list, the `gr.update` dict is applied cleanly with no conflicts.
 
+## Root Cause 4 — Progress bar on all outputs + double "..." (attempt 4 regression)
+
+`progress=gr.Progress()` in `send_message` attaches the GENERATING overlay to every component
+in the `outputs` list — chatbot, input, gallery, AND button all showed a progress bar.
+
+Separately, the first yield included a manual `{"role": "assistant", "content": "..."}` pending
+message. Gradio 5's `gr.Chatbot` also renders its own native loading indicator for running
+generators. This produced two "..." at once.
+
+**Fix (attempt 5):** Removed `progress=gr.Progress()` from the function signature entirely.
+Removed the manual "..." from the first yield — Gradio's native chatbot pending indicator
+handles loading state on its own. The first yield now contains only the user message plus
+the input lock and button lock. No custom progress mechanism needed.
+
 ## Key Invariants
 
 - Never list the same Gradio component twice in an `outputs` list — combine all property changes into one `gr.update(...)` per yield.
-- Gradio's generator loading spinner disappears after the first yield. Use `progress=gr.Progress()` and call `progress(0, desc=...)` after the first yield to show the native Gradio overlay.
+- Do NOT use `progress=gr.Progress()` in `send_message` — it attaches the GENERATING overlay to every component in `outputs`, flooding the UI with progress bars.
+- Do NOT add a manual `{"role": "assistant", "content": "..."}` to the first yield — Gradio 5's `gr.Chatbot` already shows its own native pending indicator for running generators. Adding one manually produces two "..." at once.
 - Do NOT use a custom `gr.HTML` bar as a progress substitute — it renders below the chatbox, not as an overlay, and the `visible` toggle is unreliable in Gradio 5.
 - `gr.update(value="", interactive=False)` works correctly once the outputs list has no duplicate components and no extra HTML component competing for output slots.
