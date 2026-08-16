@@ -51,6 +51,16 @@ class FPVWorkflowPanel(WorkflowPanel):
             return [self.greenzone_image_path] if self.greenzone_image_path else None
         return self.additional_images_paths if self.additional_images_paths else None
 
+    def get_work_item_references(self) -> dict:
+        refs = {}
+        if self.reference_image_path:
+            refs["character_reference"] = self.reference_image_path
+        for i, p in enumerate(self.additional_images_paths or []):
+            refs[f"additional_{i}"] = p
+        if self.greenzone_image_path:
+            refs["greenzone_base"] = self.greenzone_image_path
+        return refs
+
     def get_review_skill(self) -> str:
         ps = self.app.project_state
         if self.review_mode != "phase2":

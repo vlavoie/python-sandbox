@@ -47,6 +47,15 @@ class FinalizeWorkflowPanel(WorkflowPanel):
     def get_additional_images_for_generation(self) -> Optional[List[str]]:
         return [self.source_image_path] if self.source_image_path else None
 
+    def get_work_item_references(self) -> dict:
+        refs = {}
+        ref = self.get_reference_image_path()
+        if ref:
+            refs["character_reference"] = ref
+        if self.source_image_path:
+            refs["source_image"] = self.source_image_path
+        return refs
+
     # Stubs — finalize does not use the standard prompt/review loop
     def do_generate_prompt(self, *inputs):
         raise NotImplementedError

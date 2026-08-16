@@ -2,10 +2,11 @@
 
 import httpx
 import io
+import shutil
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
 from PIL import Image
@@ -155,6 +156,11 @@ class WorkflowPanel(ABC):
     def get_output_subdir(self) -> str:
         return ""
 
+    def get_work_item_references(self) -> Dict[str, str]:
+        """Return {filename_stem: path} of reference images to copy into work-item-N/references/.
+        Called once on iteration 0 of each work item. Override in subclasses."""
+        return {}
+
     def get_ui_outputs(self) -> List:
         """Components list for project load/restore outputs — override in subclass."""
         return [
@@ -196,6 +202,16 @@ class WorkflowPanel(ABC):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         batch_dir = base_dir / f"{timestamp}_iteration-{iteration}"
         batch_dir.mkdir(exist_ok=True)
+        if iteration == 0:
+            refs = self.get_work_item_references()
+            if refs:
+                refs_dir = base_dir / "references"
+                refs_dir.mkdir(exist_ok=True)
+                for name, path in refs.items():
+                    if path and Path(path).exists():
+                        suffix = Path(path).suffix or ".png"
+                        shutil.copy2(path, refs_dir / f"{name}{suffix}")
+
         for i, img_data in enumerate(image_data_list, 1):
             img = Image.open(io.BytesIO(img_data))
             if img.mode not in ("RGB", "RGBA"):
