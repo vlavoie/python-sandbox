@@ -621,10 +621,10 @@ class WorkflowPanel(ABC):
             outputs=[self._dup_confirm_row],
         )
 
-        _input_locked = gr.update(interactive=False)
-        _input_unlocked = gr.update(interactive=True)
-        _btn_locked = gr.update(interactive=False)
-        _btn_unlocked = gr.update(interactive=True)
+        _input_lock = gr.update(value="", interactive=False)
+        _input_unlock = gr.update(interactive=True)
+        _btn_lock = gr.update(interactive=False)
+        _btn_unlock = gr.update(interactive=True)
 
         def send_message(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
@@ -633,7 +633,7 @@ class WorkflowPanel(ABC):
 
             # Show user message + thinking placeholder; lock input while waiting.
             pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
-            yield pending, "", prior_gallery, _input_locked, _btn_locked
+            yield pending, _input_lock, prior_gallery, _btn_lock
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -642,7 +642,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _input_unlocked, _btn_unlocked
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock
                     return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
@@ -652,23 +652,23 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], "", prior_gallery, _input_unlocked, _btn_unlocked
+                    yield prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], _input_unlock, prior_gallery, _btn_unlock
                     return
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            yield result[0], "", gallery_html, _input_unlocked, _btn_unlocked
+            yield result[0], _input_unlock, gallery_html, _btn_unlock
 
         self._send_btn.click(
             fn=send_message,
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self.review_input, self._send_btn],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
         )
         self.review_input.submit(
             fn=send_message,
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self.review_input, self._send_btn],
+            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
         )
         self._extract_btn.click(
             fn=self.extract_prompt,

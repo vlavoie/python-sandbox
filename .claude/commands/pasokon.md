@@ -31,6 +31,9 @@ Each panel exposes these two methods. `get_ui_outputs()` returns the component l
 `super().get_ui_outputs() + [...]` and `super().get_ui_restore_values() + [...]`.
 Count and order must match exactly between the two methods.
 
+### Duplicate component in outputs
+Never list the same Gradio component twice in an `outputs` list — Gradio 5 applies only the last update per component. Combine all property changes into a single `gr.update(...)` per yield. For example, clearing value and locking interactive must be one `gr.update(value="", interactive=False)`, not two separate entries.
+
 ### Gradio output-only components
 `gr.Chatbot` and `gr.HTML` are OUTPUT-ONLY in this codebase.
 - Never add `self.review_chatbot` or any gallery to a Gradio `inputs=[]` list.
@@ -93,6 +96,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-12.md` — [feature] generation cost display from cost_in_usd_ticks (÷10B → USD)
 - `issues/ISSUE-16.md` — [feature] optional element base image (green zone template) for Phase 2 element fill
 - `issues/ISSUE-17.md` — [feature] duplicate prompt guard on Generate Images — inline confirm row blocks same-prompt resubmission
+- `issues/ISSUE-18.md` — [bug] review chat input not locking — duplicate component in outputs list; Gradio 5 only applies last update per component
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
