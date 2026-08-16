@@ -1,7 +1,7 @@
 # ISSUE-18: Review chat input not locking, no progress bar, input not clearing after send
 
 **Type:** Bug  
-**Status:** Fixed (attempt 7)  
+**Status:** Fixed (attempt 8)  
 **Files:** `src/pasokon/workflow_panel.py` → `_wire_events` → `send_message`
 
 ## Root Cause 1 — Duplicate component in outputs blocked locking
@@ -61,12 +61,28 @@ on the same chatbot message bubble simultaneously.
 `gr.Progress()` overlays ALL visual components in `outputs`. Targeting it to the chatbot alone
 requires keeping `gr.State` as the only co-output, since state has no visual representation.
 
-**Fix (attempt 7):** Four chained events:
+**Fix (attempt 7):** Four chained events, but `review_chatbot` was still in `_send_execute` outputs →
+Gradio's chatbot loading state activated alongside the manual "..." (double "..."), and the progress overlay
+covered the conversation instead of the chat box.
+
+## Root Cause 7 — chatbot in _send_execute outputs activates chatbot loading state (attempt 8)
+
+With `review_chatbot` in `_send_execute`'s outputs and `gr.Progress()` active, Gradio's chatbot
+component activates its loading state, duplicating the manual "..." already placed by `_send_start`.
+The progress overlay also covers the chatbot ("conversation"), not the input ("chat box").
+
+**Fix (attempt 8):** Route BOTH chatbot result and gallery through `gr.State` in `_send_execute`.
+The only visual component in `_send_execute`'s outputs is `review_input` — that gets the progress
+overlay (the "chat box"), while `review_chatbot` is never in outputs during the active API call so
+its loading state never activates. A hidden `_flush_results` `.then()` pushes both states to
+their visual components after the call completes.
+
+Four chained events:
 1. `_send_start(msg)` — sync: "...", lock input (no clear), prior gallery, lock button
-2. `_send_execute(msg, uploaded, progress=gr.Progress())` — outputs `[chatbot, _gallery_state]`.
-   `gr.Progress()` overlays only the chatbot; the state has no UI so no visible bar there.
-3. `_flush_gallery(gallery_html)` — sync, `show_progress="hidden"`: copies state → `failed_gallery`
-4. `_send_finish()` — sync: clears and unlocks input and button
+2. `_send_execute(progress=gr.Progress())` — outputs `[_chatbot_state, _gallery_state, review_input]`.
+   States invisible → overlay on `review_input` only. `review_chatbot` absent → no loading state → no double "..."
+3. `_flush_results` — `show_progress="hidden"`: flushes both states to chatbot + gallery
+4. `_send_finish()` — clears and unlocks input and button
 
 **Fix (attempt 6):** Split `send_message` into three chained events via `.then()`:
 1. `_send_start(msg)` — sync, instant: shows "..." in chatbot, locks input WITHOUT clearing

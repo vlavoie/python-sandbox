@@ -569,6 +569,7 @@ class WorkflowPanel(ABC):
                     self._send_btn = gr.Button("Send", variant="primary", scale=0, min_width=60)
                 self.failed_gallery = gr.HTML()
                 self._gallery_state = gr.State(value="")
+                self._chatbot_state = gr.State(value=[])
                 gr.Markdown("---")
                 gr.Markdown("**When satisfied with the conversation:**")
                 self._extract_btn = gr.Button(
@@ -643,7 +644,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery
+                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery, gr.update()
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
                 self.review_context = ctx
@@ -652,29 +653,31 @@ class WorkflowPanel(ABC):
                 result = self.start_review(msg, uploaded)
                 if not result[0]:
                     err = result[1] or "❌ Could not start review. Re-generate images first."
-                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery
+                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery, gr.update()
                 gallery_html = render_gallery_html(result[2])
             else:
                 result = self.continue_review(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            return result[0], gallery_html
+            return result[0], gallery_html, gr.update()
 
-        def _flush_gallery(gallery_html):
-            return gallery_html
+        def _flush_results(chatbot, gallery):
+            return chatbot, gallery
 
         def _send_finish():
             return gr.update(value="", interactive=True), gr.update(interactive=True)
 
-        # _send_execute outputs [chatbot, _gallery_state]: gr.Progress() overlays only the
-        # chatbot (gr.State has no visual). A hidden .then() flushes state → failed_gallery.
+        # _send_execute outputs [_chatbot_state, _gallery_state, review_input]:
+        # - Both states are invisible → gr.Progress() overlay appears only on review_input
+        # - review_chatbot is NOT in outputs → no Gradio chatbot loading state → no double "..."
+        # - A hidden .then() flushes both states to their visual components.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self._gallery_state],
+            outputs=[self._chatbot_state, self._gallery_state, self.review_input],
         )
         _flush_event_kwargs = dict(
-            fn=_flush_gallery,
-            inputs=[self._gallery_state],
-            outputs=[self.failed_gallery],
+            fn=_flush_results,
+            inputs=[self._chatbot_state, self._gallery_state],
+            outputs=[self.review_chatbot, self.failed_gallery],
             show_progress="hidden",
         )
         _finish_event_kwargs = dict(
