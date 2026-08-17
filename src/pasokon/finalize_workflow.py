@@ -30,6 +30,10 @@ class FinalizeWorkflowPanel(WorkflowPanel):
     def panel_id(self) -> str:
         return "finalize"
 
+    @property
+    def default_image_resolution(self) -> str:
+        return "2k"
+
     def get_output_subdir(self) -> str:
         return "finalize-outputs"
 

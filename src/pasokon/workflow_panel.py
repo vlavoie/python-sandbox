@@ -47,6 +47,10 @@ class WorkflowPanel(ABC):
         self.work_item: int = 1
         self.review_history: List = []
         self.review_context: dict = {}
+        # Per-panel model/quality settings — initialized from panel defaults
+        self.image_model: str = self.default_image_model
+        self.image_resolution: str = self.default_image_resolution
+        self.aspect_ratio: str = self.default_aspect_ratio
 
         # Gradio component refs — populated by render()
         self.panel_tabs = None
@@ -80,6 +84,18 @@ class WorkflowPanel(ABC):
     @abstractmethod
     def panel_id(self) -> str:
         """Unique string prefix for all Gradio element IDs in this panel."""
+
+    @property
+    def default_image_model(self) -> str:
+        return "grok-imagine-image-2.0"
+
+    @property
+    def default_image_resolution(self) -> str:
+        return "1k"
+
+    @property
+    def default_aspect_ratio(self) -> str:
+        return "16:9"
 
     @abstractmethod
     def do_generate_prompt(self, *inputs):
@@ -121,7 +137,6 @@ class WorkflowPanel(ABC):
 
     def render_images_tab_extra_controls(self) -> None:
         """Create the model and quality dropdowns shared by all panels."""
-        ps = self.app.project_state
         with gr.Row():
             self.image_model_dropdown = gr.Dropdown(
                 choices=[
@@ -130,15 +145,15 @@ class WorkflowPanel(ABC):
                     "grok-imagine-image-2.0",
                     "grok-imagine-image",
                 ],
-                value=ps.image_model,
+                value=self.image_model,
                 label="🎨 Model",
                 interactive=True,
                 allow_custom_value=True,
             )
-            is_aurora = ps.image_model == "grok-imagine-image-2.0"
+            is_aurora = self.image_model == "grok-imagine-image-2.0"
             self.image_resolution_dropdown = gr.Dropdown(
                 choices=["auto", "1k", "2k"],
-                value=ps.image_resolution if is_aurora else "auto",
+                value=self.image_resolution if is_aurora else "auto",
                 label="Resolution (2.0 only)",
                 interactive=is_aurora,
             )
@@ -170,22 +185,23 @@ class WorkflowPanel(ABC):
             self.review_chatbot,
             self.image_model_dropdown,
             self.image_resolution_dropdown,
+            self._aspect_ratio_dropdown,
             self._work_item_label,
             self.panel_tabs,
         ]
 
     def get_ui_restore_values(self) -> List:
         """gr.update() values matching get_ui_outputs() — override in subclass."""
-        ps = self.app.project_state
-        is_aurora = ps.image_model == "grok-imagine-image-2.0"
+        is_aurora = self.image_model == "grok-imagine-image-2.0"
         review_images = self.generated_images or []
         return [
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html(review_images)),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.review_history),
-            gr.update(value=ps.image_model),
-            gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
+            gr.update(value=self.image_model),
+            gr.update(value=self.image_resolution if is_aurora else "auto", interactive=is_aurora),
+            gr.update(value=self.aspect_ratio),
             gr.update(value=self._work_item_status()),
             gr.update(selected=f"{self.panel_id}_gen_prompt"),
         ]
@@ -314,11 +330,11 @@ class WorkflowPanel(ABC):
             def on_done(c, t):
                 progress(c / t, desc=f"Image {c}/{t} done...")
 
-            ps = self.app.project_state
-            r = ps.image_resolution if ps.image_resolution != "auto" else None
+            r = self.image_resolution if self.image_resolution != "auto" else None
             progress(0, desc=f"Generating {num_images} image(s)...")
             _, images, _ = self.generate_images_batch(
                 prompt, num_images, aspect_ratio,
+                model_override=self.image_model,
                 resolution_override=r,
                 progress_callback=on_done,
             )
@@ -581,6 +597,9 @@ class WorkflowPanel(ABC):
             "work_item": self.work_item,
             "review_history": self.review_history,
             "review_context": self.review_context,
+            "image_model": self.image_model,
+            "image_resolution": self.image_resolution,
+            "aspect_ratio": self.aspect_ratio,
         }
 
     def deserialize(self, d: dict) -> None:
@@ -589,6 +608,9 @@ class WorkflowPanel(ABC):
         self.generated_images = d.get("generated_images", [])
         self.iteration_count = d.get("iteration_count", 0)
         self.work_item = d.get("work_item", 1)
+        self.image_model = d.get("image_model", self.default_image_model)
+        self.image_resolution = d.get("image_resolution", self.default_image_resolution)
+        self.aspect_ratio = d.get("aspect_ratio", self.default_aspect_ratio)
         self.review_history = d.get("review_history", [])
         # Always reset review_context on load — its failed_images may be stale.
         # The first send_message call will invoke start_review, which rebuilds
@@ -656,7 +678,7 @@ class WorkflowPanel(ABC):
                     )
                     self._aspect_ratio_dropdown = gr.Dropdown(
                         choices=["1:1", "16:9", "9:16", "4:3", "3:4", "21:9"],
-                        value="16:9",
+                        value=self.aspect_ratio,
                         label="Aspect Ratio",
                     )
                 self._gen_images_btn = gr.Button("🖼️ Generate Images", variant="primary")
@@ -676,16 +698,26 @@ class WorkflowPanel(ABC):
         """Wire all Gradio events. Subclasses call super()._wire_events() then add their own."""
 
         def _on_model_change(model):
-            self.app.update_image_model(model)
+            self.image_model = model
+            self.app.project_state.save_project_state()
             is_aurora = model == "grok-imagine-image-2.0"
-            return gr.update(interactive=is_aurora, value="auto" if not is_aurora else self.app.project_state.image_resolution)
+            return gr.update(interactive=is_aurora, value=self.image_resolution if is_aurora else "auto")
+
+        def _on_resolution_change(resolution):
+            self.image_resolution = resolution
+            self.app.project_state.save_project_state()
+
+        def _on_aspect_change(aspect):
+            self.aspect_ratio = aspect
+            self.app.project_state.save_project_state()
 
         self.image_model_dropdown.change(
             fn=_on_model_change,
             inputs=[self.image_model_dropdown],
             outputs=[self.image_resolution_dropdown],
         )
-        self.image_resolution_dropdown.change(fn=self.app.update_image_resolution, inputs=[self.image_resolution_dropdown])
+        self.image_resolution_dropdown.change(fn=_on_resolution_change, inputs=[self.image_resolution_dropdown])
+        self._aspect_ratio_dropdown.change(fn=_on_aspect_change, inputs=[self._aspect_ratio_dropdown])
 
         self._gen_prompt_btn.click(
             fn=lambda: gr.update(interactive=False, value="⏳ Generating prompt..."),

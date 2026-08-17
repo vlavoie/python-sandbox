@@ -38,6 +38,10 @@ class FPVWorkflowPanel(WorkflowPanel):
     def panel_id(self) -> str:
         return "fpv"
 
+    @property
+    def default_aspect_ratio(self) -> str:
+        return "1:1"
+
     def get_output_subdir(self) -> str:
         return "fpv-outputs"
 
@@ -284,6 +288,9 @@ Context:
             "phase1_scene_description": self.phase1_scene_description,
             "review_history": self.review_history,
             "review_context": self.review_context,
+            "image_model": self.image_model,
+            "image_resolution": self.image_resolution,
+            "aspect_ratio": self.aspect_ratio,
         }
 
     def deserialize(self, d: dict) -> None:
@@ -301,6 +308,9 @@ Context:
         self.greenzone_image_path = d.get("greenzone_image_path")
         self.current_phase2_description = d.get("current_phase2_description", "")
         self.phase1_scene_description = d.get("phase1_scene_description", "")
+        self.image_model = d.get("image_model", self.default_image_model)
+        self.image_resolution = d.get("image_resolution", self.default_image_resolution)
+        self.aspect_ratio = d.get("aspect_ratio", self.default_aspect_ratio)
 
     def get_ui_outputs(self) -> List:
         return [
@@ -314,13 +324,13 @@ Context:
             self.output_gallery,
             self.image_model_dropdown,
             self.image_resolution_dropdown,
+            self._aspect_ratio_dropdown,
             self._work_item_label,
             self.panel_tabs,
         ]
 
     def get_ui_restore_values(self) -> List:
-        ps = self.app.project_state
-        is_aurora = ps.image_model == "grok-imagine-image-2.0"
+        is_aurora = self.image_model == "grok-imagine-image-2.0"
         scene_to_show = (
             self.current_phase2_description if self.review_mode == "phase2"
             else self.current_scene
@@ -338,8 +348,9 @@ Context:
             gr.update(value=self.review_history),
             gr.update(value=gz),
             gr.update(value=render_gallery_html(self.generated_images or [])),
-            gr.update(value=ps.image_model),
-            gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
+            gr.update(value=self.image_model),
+            gr.update(value=self.image_resolution if is_aurora else "auto", interactive=is_aurora),
+            gr.update(value=self.aspect_ratio),
             gr.update(value=self._work_item_status()),
             gr.update(selected="fpv_gen_prompt"),
         ]
