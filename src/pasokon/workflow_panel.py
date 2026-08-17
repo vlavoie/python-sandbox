@@ -171,6 +171,7 @@ class WorkflowPanel(ABC):
             self.image_model_dropdown,
             self.image_resolution_dropdown,
             self._work_item_label,
+            self.panel_tabs,
         ]
 
     def get_ui_restore_values(self) -> List:
@@ -186,6 +187,7 @@ class WorkflowPanel(ABC):
             gr.update(value=ps.image_model),
             gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
             gr.update(value=self._work_item_status()),
+            gr.update(selected=f"{self.panel_id}_gen_prompt"),
         ]
 
     # ── image generation ─────────────────────────────────────────────────

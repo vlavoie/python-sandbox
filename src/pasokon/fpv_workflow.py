@@ -315,6 +315,7 @@ Context:
             self.image_model_dropdown,
             self.image_resolution_dropdown,
             self._work_item_label,
+            self.panel_tabs,
         ]
 
     def get_ui_restore_values(self) -> List:
@@ -340,6 +341,7 @@ Context:
             gr.update(value=ps.image_model),
             gr.update(value=ps.image_resolution if is_aurora else "auto", interactive=is_aurora),
             gr.update(value=self._work_item_status()),
+            gr.update(selected="fpv_gen_prompt"),
         ]
 
     def get_prompt_tab_inputs(self) -> List:
