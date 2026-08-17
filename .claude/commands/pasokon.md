@@ -117,6 +117,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-19.md` — [feature] Finalize tab: one-click lighting/color pass via fpv-pov-finalize.md skill; no green zones, no review loop
 - `issues/ISSUE-20.md` — [feature] per-work-item reference snapshots: references/ folder created inside work-item-N/ on iteration 0
 - `issues/ISSUE-21.md` — [feature] Review tab for Finalize; extracted _render_review_tab_content/_wire_review_events/_get_extract_outputs helpers to WorkflowPanel
+- `issues/ISSUE-22.md` — [bug] review chat progress bar stuck at 0%; fixed by streaming API response token-by-token via stream_chat_completions/stream_review_images/stream_start_review
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

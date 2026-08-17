@@ -1,9 +1,10 @@
 """Grok API client for FPV POV image generation workflow."""
 
+import json
 import os
 import base64
 import io
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generator
 from pathlib import Path
 import httpx
 from dataclasses import dataclass
@@ -393,6 +394,54 @@ class GrokClient:
 
         return (successful_images, total_cost_ticks)
     
+    def _build_review_content(
+        self,
+        failed_images: List[str],
+        original_prompt: str,
+        scene_description: str,
+        reference_image: str,
+        additional_images: Optional[List[str]] = None,
+        user_comment: str = "",
+        review_mode: str = "phase1",
+    ) -> List[Dict]:
+        """Build the user content array shared by review_images and stream_review_images."""
+        content = [{"type": "text", "text": "Character reference (IMAGE_0):"}]
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"},
+        })
+
+        if additional_images:
+            for idx, img_path in enumerate(additional_images, start=1):
+                label = (
+                    "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
+                    if review_mode == "phase2" and idx == 1
+                    else f"Additional reference (IMAGE_{idx}):"
+                )
+                content.append({"type": "text", "text": label})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"},
+                })
+
+        for i, img_path in enumerate(failed_images, 1):
+            content.append({"type": "text", "text": f"Image {i}:"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"},
+            })
+
+        content.append({
+            "type": "text",
+            "text": f"Original prompt that produced these images:\n```\n{original_prompt}\n```",
+        })
+        content.append({"type": "text", "text": f"Scene description:\n{scene_description}"})
+
+        if user_comment:
+            content.append({"type": "text", "text": f"User feedback:\n{user_comment}"})
+
+        return content
+
     def review_images(
         self,
         failed_images: List[str],
@@ -405,40 +454,10 @@ class GrokClient:
         review_mode: str = "phase1"
     ) -> str:
         """Review failed images and generate a corrected prompt."""
-        content = [{"type": "text", "text": "Character reference (IMAGE_0):"}]
-
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(reference_image)}"}
-        })
-
-        if additional_images:
-            for idx, img_path in enumerate(additional_images, start=1):
-                if review_mode == "phase2" and idx == 1:
-                    label = "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
-                else:
-                    label = f"Additional reference (IMAGE_{idx}):"
-                content.append({"type": "text", "text": label})
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"}
-                })
-
-        for i, img_path in enumerate(failed_images, 1):
-            content.append({"type": "text", "text": f"Image {i}:"})
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{self._encode_image(img_path)}"}
-            })
-
-        content.append({
-            "type": "text",
-            "text": f"Original prompt that produced these images:\n```\n{original_prompt}\n```"
-        })
-        content.append({"type": "text", "text": f"Scene description:\n{scene_description}"})
-
-        if user_comment:
-            content.append({"type": "text", "text": f"User feedback:\n{user_comment}"})
+        content = self._build_review_content(
+            failed_images, original_prompt, scene_description,
+            reference_image, additional_images, user_comment, review_mode,
+        )
 
         with httpx.Client(timeout=60.0) as client:
             payload = {
@@ -449,10 +468,10 @@ class GrokClient:
                 ],
                 "temperature": 0.7,
             }
-            
+
             print(f"DEBUG: Sending review request to {self.base_url}/chat/completions")
             print(f"DEBUG: Model: {self.chat_model}")
-            
+
             try:
                 response = client.post(
                     f"{self.base_url}/chat/completions",
@@ -485,3 +504,56 @@ class GrokClient:
             if not full_response:
                 raise Exception("Warning: No response returned")
             return self._clean_prompt_text(full_response)
+
+    def stream_review_images(
+        self,
+        failed_images: List[str],
+        original_prompt: str,
+        scene_description: str,
+        reference_image: str,
+        skill_content: str,
+        additional_images: Optional[List[str]] = None,
+        user_comment: str = "",
+        review_mode: str = "phase1",
+    ) -> Generator[str, None, None]:
+        """Generator version of review_images — yields tokens as the response streams."""
+        content = self._build_review_content(
+            failed_images, original_prompt, scene_description,
+            reference_image, additional_images, user_comment, review_mode,
+        )
+        messages = [
+            {"role": "system", "content": skill_content},
+            {"role": "user", "content": content},
+        ]
+        yield from self.stream_chat_completions(messages, temperature=0.7)
+
+    def stream_chat_completions(
+        self, messages: List[Dict], temperature: Optional[float] = None
+    ) -> Generator[str, None, None]:
+        """Generator that yields partial tokens from a streaming chat completion."""
+        payload: Dict[str, Any] = {"model": self.chat_model, "messages": messages, "stream": True}
+        if temperature is not None:
+            payload["temperature"] = temperature
+
+        with httpx.Client(timeout=120.0) as hc:
+            with hc.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data.strip() == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0]["delta"].get("content") or ""
+                            if delta:
+                                yield delta
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue

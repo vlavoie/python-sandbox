@@ -392,6 +392,64 @@ class WorkflowPanel(ABC):
         except Exception as e:
             return [], f"❌ Error during review: {str(e)}", []
 
+    def _build_continue_review_messages(self, user_message: str) -> List:
+        """Build the messages list for a continue_review API call."""
+        client = self.app.client
+        messages = [{"role": "system", "content": self.get_review_skill()}]
+
+        if self.review_context:
+            content = []
+            ref = self.review_context.get("reference_image")
+            if ref:
+                content.append({"type": "text", "text": "Character reference (IMAGE_0):"})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ref)}"},
+                })
+
+            review_mode = self.review_context.get("review_mode", "phase1")
+            for idx, img_path in enumerate(self.review_context.get("additional_images") or [], 1):
+                label = (
+                    "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
+                    if review_mode == "phase2" and idx == 1
+                    else f"Additional reference (IMAGE_{idx}):"
+                )
+                content.append({"type": "text", "text": label})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(img_path)}"},
+                })
+
+            for i, ip in enumerate(self.review_context.get("failed_images", []), 1):
+                content.append({"type": "text", "text": f"Image {i}:"})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ip)}"},
+                })
+
+            content.append({
+                "type": "text",
+                "text": f"Original prompt:\n```\n{self.review_context.get('original_prompt', '')}\n```",
+            })
+            content.append({
+                "type": "text",
+                "text": f"Scene description:\n{self.review_context.get('scene_description', '')}",
+            })
+            if ic := self.review_context.get("user_initial_comment", ""):
+                content.append({"type": "text", "text": f"User's initial feedback:\n{ic}"})
+
+            messages.append({"role": "user", "content": content})
+
+        skip_first_user = True
+        for msg in self.review_history:
+            if skip_first_user and msg["role"] == "user":
+                skip_first_user = False
+                continue
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        messages.append({"role": "user", "content": user_message})
+        return messages
+
     def continue_review(self, user_message: str) -> Tuple[List, str]:
         client = self.app.client
         if not client:
@@ -400,59 +458,7 @@ class WorkflowPanel(ABC):
             return self.review_history, ""
 
         try:
-            messages = [{"role": "system", "content": self.get_review_skill()}]
-
-            if self.review_context:
-                content = []
-                ref = self.review_context.get("reference_image")
-                if ref:
-                    content.append({"type": "text", "text": "Character reference (IMAGE_0):"})
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ref)}"},
-                    })
-
-                review_mode = self.review_context.get("review_mode", "phase1")
-                for idx, img_path in enumerate(self.review_context.get("additional_images") or [], 1):
-                    label = (
-                        "Green-zoned base image (IMAGE_1) — surgical base; preserve everything outside the marked zones exactly:"
-                        if review_mode == "phase2" and idx == 1
-                        else f"Additional reference (IMAGE_{idx}):"
-                    )
-                    content.append({"type": "text", "text": label})
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(img_path)}"},
-                    })
-
-                for i, ip in enumerate(self.review_context.get("failed_images", []), 1):
-                    content.append({"type": "text", "text": f"Image {i}:"})
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ip)}"},
-                    })
-
-                content.append({
-                    "type": "text",
-                    "text": f"Original prompt:\n```\n{self.review_context.get('original_prompt', '')}\n```",
-                })
-                content.append({
-                    "type": "text",
-                    "text": f"Scene description:\n{self.review_context.get('scene_description', '')}",
-                })
-                if ic := self.review_context.get("user_initial_comment", ""):
-                    content.append({"type": "text", "text": f"User's initial feedback:\n{ic}"})
-
-                messages.append({"role": "user", "content": content})
-
-            skip_first_user = True
-            for msg in self.review_history:
-                if skip_first_user and msg["role"] == "user":
-                    skip_first_user = False
-                    continue
-                messages.append({"role": msg["role"], "content": msg["content"]})
-
-            messages.append({"role": "user", "content": user_message})
+            messages = self._build_continue_review_messages(user_message)
 
             with httpx.Client(timeout=120.0) as hc:
                 resp = hc.post(
@@ -486,6 +492,68 @@ class WorkflowPanel(ABC):
 
         except Exception as e:
             return self.review_history, f"❌ Error: {str(e)}"
+
+    def stream_start_review(self, user_comment: str, uploaded_files=None):
+        """Generator: yields (partial_history, images_reviewed) tuples as the first review streams."""
+        client = self.app.client
+        if not client:
+            user_display = user_comment.strip() or "Review these"
+            yield [
+                {"role": "user", "content": user_display},
+                {"role": "assistant", "content": "❌ Client not initialized."},
+            ], []
+            return
+
+        ps = self.app.project_state
+        images_to_review = []
+        if uploaded_files:
+            for f in uploaded_files:
+                if f is not None:
+                    p = ps.save_uploaded_file(f)
+                    if p:
+                        images_to_review.append(p)
+        elif self.generated_images:
+            images_to_review = list(self.generated_images)
+
+        user_display = user_comment.strip() or "Review these"
+
+        if not images_to_review:
+            yield [
+                {"role": "user", "content": user_display},
+                {"role": "assistant", "content": "❌ No images to review. Generate images first."},
+            ], []
+            return
+
+        ctx = self.build_review_context(images_to_review)
+        ctx["user_initial_comment"] = user_display
+        self.review_context = ctx
+
+        user_msg = {"role": "user", "content": user_display}
+        partial = ""
+        error = None
+
+        try:
+            for token in client.stream_review_images(
+                failed_images=images_to_review,
+                original_prompt=self.current_prompt,
+                scene_description=ctx.get("scene_description", ""),
+                reference_image=ctx.get("reference_image", ""),
+                skill_content=self.get_review_skill(),
+                additional_images=ctx.get("additional_images"),
+                user_comment=user_display,
+                review_mode=ctx.get("review_mode", "phase1"),
+            ):
+                partial += token
+                yield [user_msg, {"role": "assistant", "content": partial}], images_to_review
+        except Exception as e:
+            error = str(e)
+
+        if error:
+            err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
+            yield [user_msg, {"role": "assistant", "content": err_content}], []
+        elif partial:
+            self.review_history = [user_msg, {"role": "assistant", "content": partial}]
+            ps.save_project_state()
 
     def extract_prompt(self) -> Tuple[str, Any]:
         for msg in reversed(self.review_history):
@@ -660,21 +728,20 @@ class WorkflowPanel(ABC):
         self._wire_review_events()
 
     def _wire_review_events(self) -> None:
-        """Wire the send/submit 4-step chain. Called from _wire_events() and subclass overrides."""
+        """Wire the send/submit 3-step chain. Called from _wire_events() and subclass overrides."""
 
         def _send_start(msg):
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
-            pending = prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": "..."}]
-            # Lock input WITHOUT clearing so _send_execute can still read the message.
-            # _send_finish clears and unlocks after the API call completes.
+            # Show the user message immediately; Gradio's native typing indicator
+            # signals "assistant is thinking" while the streaming generator runs.
+            pending = prior_history + [{"role": "user", "content": msg}]
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
         def _send_execute(msg, uploaded, progress=gr.Progress()):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
-            progress(0, desc="Waiting for response...")
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -683,40 +750,100 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery, gr.update()
+                    yield prior_history + [
+                        {"role": "user", "content": msg},
+                        {"role": "assistant", "content": err},
+                    ], prior_gallery, gr.update()
+                    return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
                 self.review_context = ctx
 
-            if not self.review_history:
-                result = self.start_review(msg, uploaded)
-                if not result[0]:
-                    err = result[1] or "❌ Could not start review. Re-generate images first."
-                    return prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}], prior_gallery, gr.update()
-                gallery_html = render_gallery_html(result[2])
-            else:
-                result = self.continue_review(msg)
-                gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
-            return result[0], gallery_html, gr.update()
+            progress(0, desc="Waiting for response...")
 
-        def _flush_results(chatbot, gallery):
-            return chatbot, gallery
+            if not self.review_history:
+                # Fresh start — stream the initial review
+                had_yield = False
+                for partial_history, images in self.stream_start_review(msg, uploaded):
+                    had_yield = True
+                    yield partial_history, render_gallery_html(images) if images else prior_gallery, gr.update()
+                if not had_yield:
+                    err = "❌ Could not start review. Re-generate images first."
+                    yield (
+                        prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}],
+                        prior_gallery,
+                        gr.update(),
+                    )
+                progress(1.0)
+            else:
+                # Continue — stream chat completions token by token
+                client = self.app.client
+                if not client:
+                    err = "❌ Client not initialized."
+                    yield prior_history + [
+                        {"role": "user", "content": msg},
+                        {"role": "assistant", "content": err},
+                    ], prior_gallery, gr.update()
+                    return
+
+                messages = self._build_continue_review_messages(msg)
+                gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
+                partial = ""
+                token_count = 0
+                error = None
+
+                try:
+                    for token in client.stream_chat_completions(messages):
+                        partial += token
+                        token_count += 1
+                        updated = prior_history + [
+                            {"role": "user", "content": msg},
+                            {"role": "assistant", "content": partial},
+                        ]
+                        progress(min(token_count / 400, 0.95), desc="Receiving response...")
+                        yield updated, gallery_html, gr.update()
+                except Exception as e:
+                    error = str(e)
+
+                if error:
+                    err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
+                    final_history = prior_history + [
+                        {"role": "user", "content": msg},
+                        {"role": "assistant", "content": err_content},
+                    ]
+                elif not partial:
+                    final_history = prior_history + [
+                        {"role": "user", "content": msg},
+                        {"role": "assistant", "content": "❌ No response received."},
+                    ]
+                    error = "empty"
+                else:
+                    final_history = prior_history + [
+                        {"role": "user", "content": msg},
+                        {"role": "assistant", "content": partial},
+                    ]
+                    self.review_history = final_history
+                    self.app.project_state.save_project_state()
+
+                progress(1.0, desc="Done" if not error else "Failed")
+                yield final_history, gallery_html, gr.update()
+
+        def _flush_gallery(gallery):
+            return gallery
 
         def _send_finish():
             return gr.update(value="", interactive=True), gr.update(interactive=True)
 
-        # _send_execute outputs [_chatbot_state, _gallery_state, review_input]:
-        # - Both states are invisible → gr.Progress() overlay appears only on review_input
-        # - review_chatbot is NOT in outputs → no Gradio chatbot loading state → no double "..."
-        # - A hidden .then() flushes both states to their visual components.
+        # _send_execute is now a streaming generator that updates review_chatbot directly.
+        # _gallery_state still buffers the failed gallery for the hidden flush step.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self._chatbot_state, self._gallery_state, self.review_input],
+            outputs=[self.review_chatbot, self._gallery_state, self.review_input],
         )
         _flush_event_kwargs = dict(
-            fn=_flush_results,
-            inputs=[self._chatbot_state, self._gallery_state],
-            outputs=[self.review_chatbot, self.failed_gallery],
+            fn=_flush_gallery,
+            inputs=[self._gallery_state],
+            outputs=[self.failed_gallery],
             show_progress="hidden",
         )
         _finish_event_kwargs = dict(
