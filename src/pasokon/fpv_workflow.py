@@ -146,14 +146,14 @@ A primary failure mode is when the model regenerates the entire image instead of
         ps = self.app.project_state
 
         if not client or not reference_image or not scene_description.strip():
-            yield gr.update(), gr.update(), gr.update(value=[]), _btn_reset
+            yield gr.update(), gr.update(), _btn_reset
             return
 
         is_phase2 = greenzone_image is not None
 
         self._start_new_prompt()
 
-        yield gr.update(), gr.update(), gr.update(value=[]), _btn_loading
+        yield gr.update(), gr.update(), _btn_loading
 
         try:
             progress(0, desc="Preparing images...")
@@ -246,11 +246,11 @@ Context:
 
             ps.save_project_state()
             progress(1.0, desc="Done")
-            yield self.current_prompt, gr.update(selected="fpv_gen_images"), gr.update(value=[]), _btn_reset
+            yield self.current_prompt, gr.update(selected="fpv_gen_images"), _btn_reset
 
         except Exception as e:
             print(f"\nERROR IN PROMPT GENERATION:\n{e}\n")
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
+            yield "", gr.update(), _btn_reset
 
     # ── persistence ───────────────────────────────────────────────────────
 

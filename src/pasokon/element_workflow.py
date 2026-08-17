@@ -91,12 +91,12 @@ class ElementWorkflowPanel(WorkflowPanel):
         # Allow empty element reference — fall back to FPV panel's reference
         effective_ref = reference_image or self.app.fpv_panel.reference_image_path
         if not client or not effective_ref or not element_description.strip():
-            yield gr.update(), gr.update(), gr.update(value=[]), _btn_reset
+            yield gr.update(), gr.update(), _btn_reset
             return
 
         self._start_new_prompt()
 
-        yield gr.update(), gr.update(), gr.update(value=[]), _btn_loading
+        yield gr.update(), gr.update(), _btn_loading
 
         try:
             if reference_image:
@@ -144,11 +144,11 @@ class ElementWorkflowPanel(WorkflowPanel):
 
             ps.save_project_state()
             progress(1.0, desc="Done")
-            yield self.current_prompt, gr.update(selected="element_gen_images"), gr.update(value=[]), _btn_reset
+            yield self.current_prompt, gr.update(selected="element_gen_images"), _btn_reset
 
         except Exception as e:
             print(f"\nERROR IN ELEMENT PROMPT GENERATION:\n{e}\n")
-            yield "", gr.update(), gr.update(value=[]), _btn_reset
+            yield "", gr.update(), _btn_reset
 
     # ── persistence ───────────────────────────────────────────────────────
 

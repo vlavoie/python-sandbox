@@ -42,9 +42,19 @@ Never list the same Gradio component twice in an `outputs` list — Gradio 5 app
 
 ### gr.Progress() vs show_progress — do not confuse these
 `show_progress` on an event controls the loading overlay style. `gr.Progress()` as a function parameter is a completely separate mechanism that draws its own indicator regardless of `show_progress`. **`show_progress="hidden"` does NOT suppress `gr.Progress()`.**
-- Never declare `progress=gr.Progress()` in any handler that has `review_chatbot` in its outputs — it will render a progress bar over the conversation history with no way to suppress it.
-- The chat streaming generator (`_send_execute`) must never have `gr.Progress()`. Streaming text is the feedback.
-- All event handlers use `show_progress="hidden"` except generate buttons which use `show_progress="minimal"`. See ISSUE-23.
+
+**The invariant that has broken 8+ times — read this before touching event wiring:**
+A function that declares `progress=gr.Progress()` MUST NOT have `review_chatbot` in the event's `outputs` list. This has two failure modes:
+1. Adding `gr.Progress()` to a function whose event already lists `review_chatbot` in outputs.
+2. Adding `review_chatbot` to an event's outputs when the function already has `gr.Progress()`.
+
+Current functions that declare `gr.Progress()`: `generate_images_batch`, `_do_force_generate`, `do_generate_prompt` (all subclasses).
+- `generate_images_batch` / `_do_force_generate` outputs: `[output_gallery, failed_gallery, _dup_confirm_row, _gen_images_btn, _gen_anyway_btn]` — no chatbot ✓
+- `do_generate_prompt` outputs: `[prompt_box, panel_tabs, _gen_prompt_btn]` — chatbot cleared by a separate `.then()` with no `gr.Progress()` ✓
+
+- `_send_execute` (chat handler) must never have `gr.Progress()`. Streaming text is the feedback.
+- All event handlers use `show_progress="hidden"` except generate buttons which use `show_progress="minimal"`.
+- See ISSUE-23 for full history (8+ attempts, 2 confirmed instances).
 
 ### review_context is session-only
 `review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.

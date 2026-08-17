@@ -777,8 +777,12 @@ class WorkflowPanel(ABC):
         ).then(
             fn=self.do_generate_prompt,
             inputs=self.get_prompt_tab_inputs(),
-            outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
+            outputs=[self.prompt_box, self.panel_tabs, self._gen_prompt_btn],
             show_progress="minimal",
+        ).then(
+            fn=lambda: gr.update(value=[]),
+            outputs=[self.review_chatbot],
+            show_progress="hidden",
         )
 
         _gen_inputs = [self.prompt_box, self._num_images_slider, self._aspect_ratio_dropdown]
