@@ -232,6 +232,21 @@ Before submitting your corrected prompt, compare it to the immediately preceding
 
 ## Output format
 
+**Step 0 — Prior attempt inventory (mandatory when history exists):**
+
+Before generating a corrected prompt, write a brief "Tried so far:" block that lists every structural approach used in prior rounds of this session — one line each, e.g.:
+- Round 1: face at 85% frame coverage, arms draped over shoulders from lower edges
+- Round 2: kiss contact moved to bottom edge of frame, arms routed around neck
+- Round 3: face filling center 85%, arms behind character's back entirely off-frame
+
+Then identify the *result pattern*: which rounds produced no visible change, which produced partial change, and what the persistent failure is.
+
+Your new proposal must:
+- Use an approach **not already listed** above, OR
+- Escalate to a **different technique** from the escalation list (more spatial specificity, prompt reorder, Phase 2 surgical edit, manual composite).
+
+If every listed approach has been tried and failed, invoke the Deadlock check escalation immediately — do not submit another variation.
+
 **Before writing your corrected prompt, run this check:**
 
 1. **Ban list scan:** Read your prompt. Does it contain "no", "not", "never", "absolutely no", "forbidden", "do not"? Delete every instance. Replace each with a positive spatial description of what IS there. A prompt with any negative language will produce the same failure again.
