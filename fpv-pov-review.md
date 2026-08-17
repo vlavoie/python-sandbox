@@ -34,10 +34,10 @@ Examples of the correct correction logic:
 ## Phase 1 failure diagnosis — check in this order
 
 1. **Third-person leakage (highest priority):** External view of the viewer's own body — full figure, face, head, side view.
-   - Spatial fix: The prompt's opening didn't anchor the POV firmly enough. Identify what IS visible at each frame position and state it precisely. "Hands holding [object] in mid-frame. Narrow upper chest at the very bottom edge, partially occluded." Everything else simply does not appear in the description.
+   - Spatial fix: The prompt's opening didn't anchor the POV firmly enough. Identify what IS visible at each frame position and state it precisely. "My hands holding [object] in mid-frame. Narrow strip of my upper chest at the very bottom edge, partially occluded." Everything else simply does not appear in the description.
 
 2. **Wrong camera direction:** High-angle top-down body shot when scene requires looking up or forward.
-   - Spatial fix: Rewrite the opening sentence to establish the correct composition immediately. For looking up: "ceiling fills the upper 70–75% of the frame, [held object] in mid-frame, narrow chest strip at the very bottom edge." For looking forward: "[scene element] at eye level fills the center and upper frame." The composition description IS the camera direction.
+   - Spatial fix: Rewrite the opening sentence to establish the correct composition immediately. For looking up: "ceiling fills the upper 70–75% of the frame, [held object] held in my hands in mid-frame, narrow strip of my chest at the very bottom edge." For looking forward: "[scene element] at eye level fills the center and upper frame." The composition description IS the camera direction.
 
 3. **Posture drift:** Lying becomes propped, standing becomes reclining.
    - Spatial fix: Add a posture anchor in the first sentence. "First-person POV, lying flat looking directly upward" or "standing, camera at eye level looking forward."
@@ -47,10 +47,10 @@ Examples of the correct correction logic:
    - Spatial fix: Anchor the camera horizon explicitly using photography terms in the opening sentence: "camera horizon — the eye-level vanishing point — pinned exactly at the vertical center of the frame." Then position the character relative to that center line. For a slightly-taller character: chin at or just above center, face in a narrow 10–15% band above center, head top at roughly one-third from the top, ceiling filling the upper third. Do NOT set ceiling to a narrow 15–18% strip — that forces the face into a 32% slab that reads as towering.
 
 5. **Chest domination:** Chest fills the majority of the frame when it shouldn't.
-   - Spatial fix: Describe the scene content that fills the upper and center frame. End with: "A narrow strip of upper chest appears only at the very bottom edge, partially occluded by [held object]."
+   - Spatial fix: Describe the scene content that fills the upper and center frame. End with: "A narrow strip of my upper chest appears only at the very bottom edge, partially occluded by [held object]."
 
 6. **Hair problems:** Visible head silhouette, side curtain hair, hair below eye level.
-   - For Phase 1: Remove all hair mentions from the prompt — not even a request. If hair appeared despite no mention, state explicitly what body parts ARE visible at their frame positions, and add "only [held object], hands, and the narrow chest edge are visible."
+   - For Phase 1: Remove all hair mentions from the prompt — not even a request. If hair appeared despite no mention, state explicitly what body parts ARE visible at their frame positions, and add "only [held object], my hands, and my narrow chest edge are visible."
    - Never use floor, mop, pile, or downward-hair language — even as a ban. Describe hair only as peripheral/edge/entering frame from the sides.
 
 7. **Manipulated object shows wrong motion direction:** A cloth, towel, sheet, or other thrown/snapped object appears to hang, droop, or fold instead of billow or rise.
@@ -94,7 +94,7 @@ This is the most common Phase 2 hair failure and is a deadlock trigger. If it ha
 
 **The fix — reframe as a frame-border detail:**
 Describe the hair as a static geometric property of the frame itself, not as something entering it. The camera is positioned within the hairline, so the hair is simply the border of the frame. Use language like:
-> "The left and right frame borders are lined with a [X]%-wide strip of the viewer's own [style] hair — a natural frame-border detail seen from a first-person perspective where the camera sits just behind the eyes within the hairline."
+> "The left and right frame borders are lined with a [X]%-wide strip of my own [style] hair — a natural frame-border detail seen from a first-person perspective where the camera sits just behind my eyes within my hairline."
 
 Also: Phase 2 prompts must include scene context (what IMAGE_1 shows — the FPV scene type, style, looking direction). Without this, Aurora has no context for what kind of image it's modifying and defaults to common scene interpretations. Include a brief scene description after the base clause: "IMAGE_1 shows a first-person [anime/illustrated] FPV scene [looking direction], [brief scene content]."
 
@@ -221,6 +221,7 @@ Before submitting your corrected prompt, compare it to the immediately preceding
 ## Correction rules
 
 - The fix for the observed failure must appear in the first 20 tokens of the corrected prompt.
+- **First-person pronouns for viewer body parts.** Write "my hands", "my forearm", "my chest", "my own hair" in all corrected prompts — never "the hands", "forearms extending", or "viewer's arm". This is the correct FPV register and is the strongest ownership signal for Aurora.
 - No ban lists. No "not", "no", "never", "do not".
 - No repetition — state each element once.
 - Preserve what was working. If the identity/style was correct and only the camera direction failed, rewrite only the composition opening. Keep the good parts.
