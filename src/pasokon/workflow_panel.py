@@ -535,10 +535,10 @@ class WorkflowPanel(ABC):
 
         user_display = user_comment.strip() or "Review these"
 
-        if not images_to_review:
+        if not images_to_review and not self.current_prompt:
             yield [
                 {"role": "user", "content": user_display},
-                {"role": "assistant", "content": "❌ No images to review. Generate images first."},
+                {"role": "assistant", "content": "❌ No prompt or images to review yet."},
             ], []
             return
 
@@ -550,21 +550,64 @@ class WorkflowPanel(ABC):
         partial = ""
         error = None
 
-        try:
-            for token in client.stream_review_images(
-                failed_images=images_to_review,
-                original_prompt=self.current_prompt,
-                scene_description=ctx.get("scene_description", ""),
-                reference_image=ctx.get("reference_image", ""),
-                skill_content=self.get_review_skill(),
-                additional_images=ctx.get("additional_images"),
-                user_comment=user_display,
-                review_mode=ctx.get("review_mode", "phase1"),
-            ):
-                partial += token
-                yield [user_msg, {"role": "assistant", "content": partial}], images_to_review
-        except Exception as e:
-            error = str(e)
+        if not images_to_review:
+            # Prompt-only review — analyze before generating
+            messages = [{"role": "system", "content": self.get_review_skill()}]
+            content = []
+            ref = ctx.get("reference_image")
+            if ref:
+                content.append({"type": "text", "text": "Character reference (IMAGE_0):"})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(ref)}"},
+                })
+            for idx, img_path in enumerate(ctx.get("additional_images") or [], 1):
+                content.append({"type": "text", "text": f"Additional reference (IMAGE_{idx}):"})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{client._encode_image(img_path)}"},
+                })
+            content.append({
+                "type": "text",
+                "text": f"Prompt to review (no images generated yet):\n```\n{self.current_prompt}\n```",
+            })
+            if ctx.get("scene_description"):
+                content.append({"type": "text", "text": f"Scene description:\n{ctx['scene_description']}"})
+            content.append({
+                "type": "text",
+                "text": (
+                    "No images have been generated yet. Analyze this prompt and predict what Aurora failures "
+                    "it is most likely to trigger. Apply the same spatial analysis as if you had seen a failed output: "
+                    "identify absent or imprecise spatial descriptions, predict the most probable failure mode, "
+                    "and provide a corrected prompt using the standard output format."
+                ),
+            })
+            if user_display and user_display != "Review these":
+                content.append({"type": "text", "text": f"User feedback:\n{user_display}"})
+            messages.append({"role": "user", "content": content})
+
+            try:
+                for token in client.stream_chat_completions(messages):
+                    partial += token
+                    yield [user_msg, {"role": "assistant", "content": partial}], []
+            except Exception as e:
+                error = str(e)
+        else:
+            try:
+                for token in client.stream_review_images(
+                    failed_images=images_to_review,
+                    original_prompt=self.current_prompt,
+                    scene_description=ctx.get("scene_description", ""),
+                    reference_image=ctx.get("reference_image", ""),
+                    skill_content=self.get_review_skill(),
+                    additional_images=ctx.get("additional_images"),
+                    user_comment=user_display,
+                    review_mode=ctx.get("review_mode", "phase1"),
+                ):
+                    partial += token
+                    yield [user_msg, {"role": "assistant", "content": partial}], images_to_review
+            except Exception as e:
+                error = str(e)
 
         if error:
             err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
@@ -723,12 +766,12 @@ class WorkflowPanel(ABC):
         self._gen_prompt_btn.click(
             fn=lambda: gr.update(interactive=False, value="⏳ Generating prompt..."),
             outputs=[self._gen_prompt_btn],
-            show_progress="hidden",
+            show_progress="minimal",
         ).then(
             fn=self.do_generate_prompt,
             inputs=self.get_prompt_tab_inputs(),
             outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
-            show_progress="hidden",
+            show_progress="minimal",
         )
 
         _gen_inputs = [self.prompt_box, self._num_images_slider, self._aspect_ratio_dropdown]
@@ -738,7 +781,7 @@ class WorkflowPanel(ABC):
             fn=self._generate_images_for_ui,
             inputs=_gen_inputs,
             outputs=_gen_outputs,
-            show_progress="hidden",
+            show_progress="minimal",
         ).then(
             fn=lambda: gr.update(value=self._work_item_status()),
             outputs=[self._work_item_label],
@@ -748,7 +791,7 @@ class WorkflowPanel(ABC):
             fn=self._force_generate_images_for_ui,
             inputs=_gen_inputs,
             outputs=_gen_outputs,
-            show_progress="hidden",
+            show_progress="minimal",
         ).then(
             fn=lambda: gr.update(value=self._work_item_status()),
             outputs=[self._work_item_label],
@@ -898,7 +941,7 @@ class WorkflowPanel(ABC):
         _send_start_kwargs = dict(
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-            show_progress="minimal",
+            show_progress="hidden",
         )
         self._send_btn.click(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
         self.review_input.submit(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
