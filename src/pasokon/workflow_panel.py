@@ -283,6 +283,7 @@ class WorkflowPanel(ABC):
             self.current_prompt = prompt
             if self.review_context:
                 self.review_context["failed_images"] = images
+                self.review_context["original_prompt"] = prompt
 
             ps = self.app.project_state
             is_partial = len(images) < num_images
@@ -873,6 +874,7 @@ class WorkflowPanel(ABC):
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_chatbot, self._gallery_state, self.review_input],
+            show_progress="hidden",
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,
