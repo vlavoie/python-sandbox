@@ -246,24 +246,29 @@ class FPVPOVApp:
                 fn=self._set_project_for_ui,
                 inputs=[project_name_input],
                 outputs=OUTPUTS_PROJECT,
+                show_progress="hidden",
             )
             project_name_input.submit(
                 fn=self._set_project_for_ui,
                 inputs=[project_name_input],
                 outputs=OUTPUTS_PROJECT,
+                show_progress="hidden",
             )
             load_project_btn.click(
                 fn=self._load_project_for_ui,
                 inputs=[self.project_selector],
                 outputs=OUTPUTS_PROJECT,
+                show_progress="hidden",
             )
             manual_save_btn.click(
                 fn=self.project_state.save_project_state,
                 outputs=[project_mgmt_status],
+                show_progress="hidden",
             )
             chat_model_dropdown.change(
                 fn=self.update_chat_model,
                 inputs=[chat_model_dropdown],
+                show_progress="hidden",
             )
 
             # Auto-load on page load

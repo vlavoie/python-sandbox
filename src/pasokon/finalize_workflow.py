@@ -189,7 +189,7 @@ class FinalizeWorkflowPanel(WorkflowPanel):
 
     def _wire_events(self) -> None:
         super()._wire_events()
-        self._source_image.change(fn=self._on_source_change, inputs=[self._source_image])
+        self._source_image.change(fn=self._on_source_change, inputs=[self._source_image], show_progress="hidden")
 
     def _on_source_change(self, img) -> None:
         if img:

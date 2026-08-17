@@ -310,21 +310,20 @@ class WorkflowPanel(ABC):
             and prompt.strip()
             and prompt.strip() == self._last_submitted_prompt.strip()
         ):
-            return (
-                render_gallery_html(self.generated_images),
-                gr.update(),
-                gr.update(visible=True),
-            )
+            yield render_gallery_html(self.generated_images), gr.update(), gr.update(visible=True), gr.update(), gr.update()
+            return
+        yield gr.update(), gr.update(), gr.update(visible=False), gr.update(interactive=False), gr.update(interactive=False)
         self._last_submitted_prompt = (prompt or "").strip()
         gallery, failed = self._do_generate(prompt, num_images, aspect_ratio, progress)
-        return gallery, failed, gr.update(visible=False)
+        yield gallery, failed, gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)
 
     def _force_generate_images_for_ui(
         self, prompt, num_images, aspect_ratio, progress=gr.Progress()
     ):
+        yield gr.update(), gr.update(), gr.update(), gr.update(interactive=False), gr.update(interactive=False)
         self._last_submitted_prompt = (prompt or "").strip()
         gallery, failed = self._do_generate(prompt, num_images, aspect_ratio, progress)
-        return gallery, failed, gr.update(visible=False)
+        yield gallery, failed, gr.update(visible=False), gr.update(interactive=True), gr.update(interactive=True)
 
     def _do_generate(self, prompt, num_images, aspect_ratio, progress):
         try:
@@ -716,9 +715,10 @@ class WorkflowPanel(ABC):
             fn=_on_model_change,
             inputs=[self.image_model_dropdown],
             outputs=[self.image_resolution_dropdown],
+            show_progress="hidden",
         )
-        self.image_resolution_dropdown.change(fn=_on_resolution_change, inputs=[self.image_resolution_dropdown])
-        self._aspect_ratio_dropdown.change(fn=_on_aspect_change, inputs=[self._aspect_ratio_dropdown])
+        self.image_resolution_dropdown.change(fn=_on_resolution_change, inputs=[self.image_resolution_dropdown], show_progress="hidden")
+        self._aspect_ratio_dropdown.change(fn=_on_aspect_change, inputs=[self._aspect_ratio_dropdown], show_progress="hidden")
 
         self._gen_prompt_btn.click(
             fn=lambda: gr.update(interactive=False, value="⏳ Generating prompt..."),
@@ -728,36 +728,43 @@ class WorkflowPanel(ABC):
             fn=self.do_generate_prompt,
             inputs=self.get_prompt_tab_inputs(),
             outputs=[self.prompt_box, self.panel_tabs, self.review_chatbot, self._gen_prompt_btn],
+            show_progress="hidden",
         )
 
         _gen_inputs = [self.prompt_box, self._num_images_slider, self._aspect_ratio_dropdown]
-        _gen_outputs = [self.output_gallery, self.failed_gallery, self._dup_confirm_row]
+        _gen_outputs = [self.output_gallery, self.failed_gallery, self._dup_confirm_row, self._gen_images_btn, self._gen_anyway_btn]
 
         self._gen_images_btn.click(
             fn=self._generate_images_for_ui,
             inputs=_gen_inputs,
             outputs=_gen_outputs,
+            show_progress="hidden",
         ).then(
             fn=lambda: gr.update(value=self._work_item_status()),
             outputs=[self._work_item_label],
+            show_progress="hidden",
         )
         self._gen_anyway_btn.click(
             fn=self._force_generate_images_for_ui,
             inputs=_gen_inputs,
             outputs=_gen_outputs,
+            show_progress="hidden",
         ).then(
             fn=lambda: gr.update(value=self._work_item_status()),
             outputs=[self._work_item_label],
+            show_progress="hidden",
         )
         self._dup_cancel_btn.click(
             fn=lambda: gr.update(visible=False),
             outputs=[self._dup_confirm_row],
+            show_progress="hidden",
         )
 
         self._extract_btn.click(
             fn=self.extract_prompt,
             inputs=[],
             outputs=self._get_extract_outputs(),
+            show_progress="hidden",
         )
 
         self._wire_review_events()
@@ -785,10 +792,10 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield prior_history + [
+                    yield gr.update(), prior_history + [
                         {"role": "user", "content": msg},
                         {"role": "assistant", "content": err},
-                    ], prior_gallery, gr.update()
+                    ], prior_gallery
                     return
                 ctx = self.build_review_context(images)
                 ctx["user_initial_comment"] = ""
@@ -801,13 +808,13 @@ class WorkflowPanel(ABC):
                 had_yield = False
                 for partial_history, images in self.stream_start_review(msg, uploaded):
                     had_yield = True
-                    yield partial_history, render_gallery_html(images) if images else prior_gallery, gr.update()
+                    yield gr.update(), partial_history, render_gallery_html(images) if images else prior_gallery
                 if not had_yield:
                     err = "❌ Could not start review. Re-generate images first."
                     yield (
+                        gr.update(),
                         prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}],
                         prior_gallery,
-                        gr.update(),
                     )
                 progress(1.0)
             else:
@@ -815,10 +822,10 @@ class WorkflowPanel(ABC):
                 client = self.app.client
                 if not client:
                     err = "❌ Client not initialized."
-                    yield prior_history + [
+                    yield gr.update(), prior_history + [
                         {"role": "user", "content": msg},
                         {"role": "assistant", "content": err},
-                    ], prior_gallery, gr.update()
+                    ], prior_gallery
                     return
 
                 messages = self._build_continue_review_messages(msg)
@@ -836,7 +843,7 @@ class WorkflowPanel(ABC):
                             {"role": "assistant", "content": partial},
                         ]
                         progress(min(token_count / 400, 0.95), desc="Receiving response...")
-                        yield updated, gallery_html, gr.update()
+                        yield gr.update(), updated, gallery_html
                 except Exception as e:
                     error = str(e)
 
@@ -861,7 +868,7 @@ class WorkflowPanel(ABC):
                     self.app.project_state.save_project_state()
 
                 progress(1.0, desc="Done" if not error else "Failed")
-                yield final_history, gallery_html, gr.update()
+                yield gr.update(), final_history, gallery_html
 
         def _flush_gallery(gallery):
             return gallery
@@ -873,8 +880,8 @@ class WorkflowPanel(ABC):
         # _gallery_state still buffers the failed gallery for the hidden flush step.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_chatbot, self._gallery_state, self.review_input],
-            show_progress="hidden",
+            outputs=[self.review_input, self.review_chatbot, self._gallery_state],
+            show_progress="minimal",
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,
@@ -885,15 +892,13 @@ class WorkflowPanel(ABC):
         _finish_event_kwargs = dict(
             fn=_send_finish,
             outputs=[self.review_input, self._send_btn],
+            show_progress="hidden",
         )
 
-        self._send_btn.click(
-            fn=_send_start,
+        _send_start_kwargs = dict(
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        ).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
-        self.review_input.submit(
-            fn=_send_start,
-            inputs=[self.review_input],
-            outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-        ).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
+            show_progress="hidden",
+        )
+        self._send_btn.click(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
+        self.review_input.submit(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)

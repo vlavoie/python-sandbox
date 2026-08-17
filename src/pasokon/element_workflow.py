@@ -236,10 +236,12 @@ class ElementWorkflowPanel(WorkflowPanel):
         self.element_reference.change(
             fn=self._on_reference_change,
             inputs=[self.element_reference],
+            show_progress="hidden",
         )
         self.element_base.change(
             fn=self._on_base_change,
             inputs=[self.element_base],
+            show_progress="hidden",
         )
 
     def _on_reference_change(self, ref_image) -> None:

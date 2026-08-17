@@ -390,9 +390,9 @@ Context:
         super()._wire_events()
 
         # Pre-save uploaded files immediately on change (so Save Now works before Generate Prompt)
-        self.reference_image.change(fn=self._on_reference_change, inputs=[self.reference_image])
-        self.additional_images.change(fn=self._on_additional_change, inputs=[self.additional_images])
-        self.greenzone_image.change(fn=self._on_greenzone_change, inputs=[self.greenzone_image])
+        self.reference_image.change(fn=self._on_reference_change, inputs=[self.reference_image], show_progress="hidden")
+        self.additional_images.change(fn=self._on_additional_change, inputs=[self.additional_images], show_progress="hidden")
+        self.greenzone_image.change(fn=self._on_greenzone_change, inputs=[self.greenzone_image], show_progress="hidden")
 
     def _on_reference_change(self, ref_image) -> None:
         if ref_image:
