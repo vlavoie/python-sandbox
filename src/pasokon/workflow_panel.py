@@ -260,7 +260,7 @@ class WorkflowPanel(ABC):
         if not ref:
             return "❌ No reference image.", [], []
         try:
-            image_data_list, total_cost_ticks = client.generate_images(
+            image_data_list, total_cost_ticks, moderation_messages = client.generate_images(
                 prompt=prompt,
                 reference_image=ref,
                 num_images=num_images,
@@ -270,6 +270,8 @@ class WorkflowPanel(ABC):
                 resolution=resolution_override,
                 progress_callback=progress_callback,
             )
+            for msg in moderation_messages:
+                gr.Warning(f"🚫 Content moderated: {msg}")
             if not image_data_list:
                 return "❌ No images generated.", [], []
 
@@ -300,7 +302,12 @@ class WorkflowPanel(ABC):
             return status, images, images
 
         except Exception as e:
-            return f"❌ Error: {str(e)}", [], []
+            err_str = str(e)
+            if err_str.startswith("imagine:content-moderated:"):
+                msg = err_str.split(":", 2)[-1].strip()
+                gr.Warning(f"🚫 Content moderated: {msg}")
+                return "🚫 Content moderated.", [], []
+            return f"❌ Error: {err_str}", [], []
 
     def _generate_images_for_ui(
         self, prompt, num_images, aspect_ratio, progress=gr.Progress()

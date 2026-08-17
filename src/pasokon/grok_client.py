@@ -300,6 +300,11 @@ class GrokClient:
                     response.raise_for_status()
                     result = response.json()
 
+                    if result.get("code") == "imagine:content-moderated":
+                        msg = result.get("error", "Content moderated by xAI policy")
+                        print(f"\n🚫 Image {index + 1}/{num_images} content-moderated: {msg}")
+                        raise Exception(f"imagine:content-moderated: {msg}")
+
                     cost_ticks = result.get("usage", {}).get("cost_in_usd_ticks", 0) or 0
 
                     # Grok returns image URLs, not base64
@@ -347,6 +352,7 @@ class GrokClient:
         images = [None] * num_images  # Pre-allocate list to maintain order
         cost_ticks_list = [0] * num_images
         errors = []
+        moderation_messages = []
 
         with ThreadPoolExecutor(max_workers=num_images) as executor:
             future_to_index = {executor.submit(generate_single_image, i): i for i in range(num_images)}
@@ -360,7 +366,10 @@ class GrokClient:
                     cost_ticks_list[idx] = ticks
                 except Exception as e:
                     error_msg = str(e)
-                    errors.append((index + 1, error_msg))
+                    if error_msg.startswith("imagine:content-moderated:"):
+                        moderation_messages.append(error_msg.split(":", 2)[-1].strip())
+                    else:
+                        errors.append((index + 1, error_msg))
                     print(f"   ⚠️ Image {index + 1} failed, continuing with others...")
                 completed += 1
                 if progress_callback:
@@ -381,18 +390,20 @@ class GrokClient:
             success_count = len(successful_images)
             error_summary = "\n".join([f"  • Image {idx}: {msg.split(chr(10))[0]}" for idx, msg in errors])
 
-            if success_count == 0:
+            if success_count == 0 and not moderation_messages:
                 raise Exception(
                     f"All {num_images} images failed to generate:\n{error_summary}"
                 )
             else:
                 print(f"\n⚠️ {success_count}/{num_images} images generated successfully in {overall_time:.1f}s")
                 print(f"❌ {failed_count} image(s) failed:\n{error_summary}\n")
-                return (successful_images, total_cost_ticks)
-        else:
+        elif not moderation_messages:
             print(f"\n✨ All {num_images} images generated in {overall_time:.1f}s (avg {overall_time/num_images:.1f}s per image)\n")
 
-        return (successful_images, total_cost_ticks)
+        if moderation_messages and not successful_images and not errors:
+            raise Exception(f"imagine:content-moderated: {moderation_messages[0]}")
+
+        return (successful_images, total_cost_ticks, moderation_messages)
     
     def _build_review_content(
         self,
