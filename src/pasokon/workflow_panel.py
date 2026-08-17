@@ -835,6 +835,10 @@ class WorkflowPanel(ABC):
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
+            # Gradio clears generator outputs before the first yield.
+            # Re-emit the user message immediately so it stays visible during the API wait.
+            yield gr.update(), prior_history + [{"role": "user", "content": msg}], prior_gallery
+
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
             # the existing conversation without wiping history.
