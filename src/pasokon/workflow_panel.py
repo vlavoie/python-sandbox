@@ -881,7 +881,7 @@ class WorkflowPanel(ABC):
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_input, self.review_chatbot, self._gallery_state],
-            show_progress="minimal",
+            show_progress="hidden",
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,
@@ -898,7 +898,7 @@ class WorkflowPanel(ABC):
         _send_start_kwargs = dict(
             inputs=[self.review_input],
             outputs=[self.review_chatbot, self.review_input, self.failed_gallery, self._send_btn],
-            show_progress="hidden",
+            show_progress="minimal",
         )
         self._send_btn.click(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
         self.review_input.submit(fn=_send_start, **_send_start_kwargs).then(fn=_send_execute, **_send_event_kwargs).then(**_flush_event_kwargs).then(**_finish_event_kwargs)
