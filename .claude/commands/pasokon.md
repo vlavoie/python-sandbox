@@ -25,6 +25,9 @@ load/set operation. `_build_project_outputs()` must return exactly the same numb
 in the same order. Any component added to one must be added to both.
 Every component must be stored as `self.xyz` — local variables become stale.
 
+### serialize / deserialize contract (workflow_panel.py)
+Panel `serialize()` overrides must call `super().serialize(project_dir)` and extend the returned dict — never reimplement the base fields. The base saves: `current_prompt`, `generated_images`, `iteration_count`, `work_item`, `review_history`, `review_context`, `cost_log`, `image_model`, `image_resolution`, `aspect_ratio`. `deserialize()` must call `super().deserialize(d)` (all subclasses already do this). See ISSUE-30.
+
 ### get_ui_outputs / get_ui_restore_values contract (workflow_panel.py)
 Each panel exposes these two methods. `get_ui_outputs()` returns the component list;
 `get_ui_restore_values()` returns matching `gr.update(...)` values. Subclasses call
@@ -97,6 +100,7 @@ Before editing `fpv-pov-image.md` or `fpv-pov-review.md`, read:
 - `tuning/TUNING-2.md` — finalize prompts must name art style first and describe the full scene as-is; "Starting from IMAGE_1 as unchanged base…" signals a delta and causes style drift
 - `tuning/TUNING-3.md` — viewer body parts must use first-person pronouns ("my hand", "I reach"); depersonalized language ("forearms extending", "viewer's arm") causes Aurora to treat them as a separate character's hands
 - `tuning/TUNING-4.md` — prior attempt inventory step added to ALL review loops (fpv-pov-review.md, fpv-pov-element.md, finalize prefix); forces model to synthesize full trial record before proposing. **TUNING-4b:** extended to element and finalize after observing same anchoring failure there
+- `tuning/TUNING-5.md` — deep reasoning parity for element and finalize: added functional identity check, correction rules (density matters), when-no-feedback handler, and pre-submission check sequence to fpv-pov-element.md and finalize_workflow.py prefix
 
 ## Issue workflow
 Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.
@@ -142,6 +146,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-27.md` — [feature] content moderation warning bubble; gr.Warning() toast on imagine:content-moderated response code
 - `issues/ISSUE-28.md` — [bug] user message bubble empty until first token; Gradio clears generator outputs before first yield — always re-emit desired state as first yield
 - `issues/ISSUE-29.md` — [feature] per-prompt and aggregate project cost tracking; cost_log persisted in panel state, shown in work item label
+- `issues/ISSUE-30.md` — [bug] FPV and Element serialize() reimplemented base fields; cost_log never saved or loaded for those panels (FPV also missing super().deserialize())
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

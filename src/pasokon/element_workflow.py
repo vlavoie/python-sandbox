@@ -153,18 +153,12 @@ class ElementWorkflowPanel(WorkflowPanel):
     # ── persistence ───────────────────────────────────────────────────────
 
     def serialize(self, project_dir) -> dict:
-        return {
-            "current_prompt": self.current_prompt,
-            "generated_images": self.generated_images,
-            "iteration_count": self.iteration_count,
-            "work_item": self.work_item,
-            "review_history": self.review_history,
-            "review_context": self.review_context,
-            "element_reference_path": self.element_reference_path,
-            "element_base_path": self.element_base_path,
-            "element_description": self.element_description,
-            "background_color": self.background_color,
-        }
+        d = super().serialize(project_dir)
+        d["element_reference_path"] = self.element_reference_path
+        d["element_base_path"] = self.element_base_path
+        d["element_description"] = self.element_description
+        d["background_color"] = self.background_color
+        return d
 
     def deserialize(self, d: dict) -> None:
         super().deserialize(d)

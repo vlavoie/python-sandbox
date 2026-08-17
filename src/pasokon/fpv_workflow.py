@@ -255,10 +255,7 @@ Context:
     # ── persistence ───────────────────────────────────────────────────────
 
     def serialize(self, project_dir) -> dict:
-        """
-        Copy reference images into project_dir/references/ and return the
-        full FPV state with stable, project-relative paths.
-        """
+        """Copy reference images into project_dir and return full FPV state with stable paths."""
         ps = self.app.project_state
 
         saved_ref = (
@@ -274,33 +271,22 @@ Context:
             if self.greenzone_image_path else None
         )
 
-        return {
-            "current_prompt": self.current_prompt,
-            "current_scene": self.current_scene,
-            "reference_image_path": saved_ref,
-            "additional_images_paths": saved_additional,
-            "generated_images": self.generated_images,
-            "iteration_count": self.iteration_count,
-            "work_item": self.work_item,
-            "review_mode": self.review_mode,
-            "greenzone_image_path": saved_gz,
-            "current_phase2_description": self.current_phase2_description,
-            "phase1_scene_description": self.phase1_scene_description,
-            "review_history": self.review_history,
-            "review_context": self.review_context,
-            "image_model": self.image_model,
-            "image_resolution": self.image_resolution,
-            "aspect_ratio": self.aspect_ratio,
-        }
+        d = super().serialize(project_dir)
+        d["current_scene"] = self.current_scene
+        d["reference_image_path"] = saved_ref
+        d["additional_images_paths"] = saved_additional
+        d["review_mode"] = self.review_mode
+        d["greenzone_image_path"] = saved_gz
+        d["current_phase2_description"] = self.current_phase2_description
+        d["phase1_scene_description"] = self.phase1_scene_description
+        return d
 
     def deserialize(self, d: dict) -> None:
         """Restore FPV state from a serialized dict (supports both new and legacy key names)."""
-        self.current_prompt = d.get("current_prompt", "")
-        self.generated_images = d.get("generated_images", [])
-        self.iteration_count = d.get("iteration_count", 0)
-        self.work_item = d.get("work_item", 1)
-        self.review_history = d.get("review_history") or d.get("phase1_review_history", [])
-        self.review_context = d.get("review_context") or d.get("phase1_review_context", {})
+        super().deserialize(d)
+        # Legacy key fallback for review_history (old saves used phase1_review_history)
+        if not self.review_history:
+            self.review_history = d.get("phase1_review_history", [])
         self.current_scene = d.get("current_scene", "")
         self.reference_image_path = d.get("reference_image_path")
         self.additional_images_paths = d.get("additional_images_paths", [])
@@ -308,9 +294,6 @@ Context:
         self.greenzone_image_path = d.get("greenzone_image_path")
         self.current_phase2_description = d.get("current_phase2_description", "")
         self.phase1_scene_description = d.get("phase1_scene_description", "")
-        self.image_model = d.get("image_model", self.default_image_model)
-        self.image_resolution = d.get("image_resolution", self.default_image_resolution)
-        self.aspect_ratio = d.get("aspect_ratio", self.default_aspect_ratio)
 
     def get_ui_outputs(self) -> List:
         return [
