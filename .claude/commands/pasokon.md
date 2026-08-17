@@ -140,6 +140,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-26.md` — [feature] prompt-only review with no images; stream_start_review falls through to text-only API call when current_prompt set
 - `issues/ISSUE-27.md` — [feature] content moderation warning bubble; gr.Warning() toast on imagine:content-moderated response code
 - `issues/ISSUE-28.md` — [bug] user message bubble empty until first token; Gradio clears generator outputs before first yield — always re-emit desired state as first yield
+- `issues/ISSUE-29.md` — [feature] per-prompt and aggregate project cost tracking; cost_log persisted in panel state, shown in work item label
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

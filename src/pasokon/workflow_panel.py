@@ -47,6 +47,7 @@ class WorkflowPanel(ABC):
         self.work_item: int = 1
         self.review_history: List = []
         self.review_context: dict = {}
+        self.cost_log: List[Dict] = []
         # Per-panel model/quality settings — initialized from panel defaults
         self.image_model: str = self.default_image_model
         self.image_resolution: str = self.default_image_resolution
@@ -120,7 +121,14 @@ class WorkflowPanel(ABC):
     # ── optional hooks ────────────────────────────────────────────────────
 
     def _work_item_status(self) -> str:
-        return f"**Work Item {self.work_item}** · Iteration {self.iteration_count}"
+        wi_ticks = sum(e["ticks"] for e in self.cost_log if e.get("work_item") == self.work_item)
+        total_ticks = sum(e["ticks"] for e in self.cost_log)
+        parts = [f"**Work Item {self.work_item}** · Iteration {self.iteration_count}"]
+        if wi_ticks:
+            parts.append(f"💰 ${wi_ticks / 10_000_000_000:.4f}")
+        if total_ticks and total_ticks != wi_ticks:
+            parts.append(f"total: ${total_ticks / 10_000_000_000:.4f}")
+        return " · ".join(parts)
 
     def _start_new_prompt(self) -> None:
         """Advance work item if prior work exists, then clear per-item state.
@@ -280,6 +288,12 @@ class WorkflowPanel(ABC):
             )
             images = [str(saved_dir / f"image_{i}.png") for i in range(1, len(image_data_list) + 1)]
 
+            if total_cost_ticks:
+                self.cost_log.append({
+                    "work_item": self.work_item,
+                    "iteration": self.iteration_count,
+                    "ticks": total_cost_ticks,
+                })
             self.iteration_count += 1
             self.generated_images = images
             self.current_prompt = prompt
@@ -647,6 +661,7 @@ class WorkflowPanel(ABC):
             "work_item": self.work_item,
             "review_history": self.review_history,
             "review_context": self.review_context,
+            "cost_log": self.cost_log,
             "image_model": self.image_model,
             "image_resolution": self.image_resolution,
             "aspect_ratio": self.aspect_ratio,
@@ -658,6 +673,7 @@ class WorkflowPanel(ABC):
         self.generated_images = d.get("generated_images", [])
         self.iteration_count = d.get("iteration_count", 0)
         self.work_item = d.get("work_item", 1)
+        self.cost_log = d.get("cost_log", [])
         self.image_model = d.get("image_model", self.default_image_model)
         self.image_resolution = d.get("image_resolution", self.default_image_resolution)
         self.aspect_ratio = d.get("aspect_ratio", self.default_aspect_ratio)
