@@ -49,6 +49,7 @@ The light source must already be visible in IMAGE_1. Never introduce a light sou
 - **No structural changes.** No added elements, no repositioning, no new characters.
 - **No green zones.** This is not Phase 2.
 - **No negative language.** Describe what is present, not what should be absent.
+- **First-person pronouns for viewer body parts.** "My right hand", "my forearm", "I reach" — not "the hand" or "viewer's arm". This is the correct FPV register.
 - **Lock to IMAGE_0.** Always include the character identity lock line.
 - **Lock to IMAGE_1.** Always close with the spatial reproduction clause.
 
