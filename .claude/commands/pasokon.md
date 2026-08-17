@@ -40,6 +40,12 @@ Never list the same Gradio component twice in an `outputs` list — Gradio 5 app
 - The authoritative history is `self.review_history` on the panel object.
 - The authoritative images are `self.generated_images` on the panel object.
 
+### gr.Progress() vs show_progress — do not confuse these
+`show_progress` on an event controls the loading overlay style. `gr.Progress()` as a function parameter is a completely separate mechanism that draws its own indicator regardless of `show_progress`. **`show_progress="hidden"` does NOT suppress `gr.Progress()`.**
+- Never declare `progress=gr.Progress()` in any handler that has `review_chatbot` in its outputs — it will render a progress bar over the conversation history with no way to suppress it.
+- The chat streaming generator (`_send_execute`) must never have `gr.Progress()`. Streaming text is the feedback.
+- All event handlers use `show_progress="hidden"` except generate buttons which use `show_progress="minimal"`. See ISSUE-23.
+
 ### review_context is session-only
 `review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.
 On the first message of a new session, `send_message` detects `review_history` present but
@@ -118,6 +124,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-20.md` — [feature] per-work-item reference snapshots: references/ folder created inside work-item-N/ on iteration 0
 - `issues/ISSUE-21.md` — [feature] Review tab for Finalize; extracted _render_review_tab_content/_wire_review_events/_get_extract_outputs helpers to WorkflowPanel
 - `issues/ISSUE-22.md` — [bug] review chat progress bar stuck at 0%; fixed by streaming API response token-by-token via stream_chat_completions/stream_review_images/stream_start_review
+- `issues/ISSUE-23.md` — [bug] gr.Progress() in _send_execute causes progress overlay on chatbot regardless of show_progress; fix: never declare gr.Progress() in handlers with review_chatbot in outputs
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

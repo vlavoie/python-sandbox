@@ -823,7 +823,7 @@ class WorkflowPanel(ABC):
             pending = prior_history + [{"role": "user", "content": msg}]
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
-        def _send_execute(msg, uploaded, progress=gr.Progress()):
+        def _send_execute(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
             prior_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
@@ -844,8 +844,6 @@ class WorkflowPanel(ABC):
                 ctx["user_initial_comment"] = ""
                 self.review_context = ctx
 
-            progress(0, desc="Waiting for response...")
-
             if not self.review_history:
                 # Fresh start — stream the initial review
                 had_yield = False
@@ -859,7 +857,6 @@ class WorkflowPanel(ABC):
                         prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}],
                         prior_gallery,
                     )
-                progress(1.0)
             else:
                 # Continue — stream chat completions token by token
                 client = self.app.client
@@ -874,18 +871,15 @@ class WorkflowPanel(ABC):
                 messages = self._build_continue_review_messages(msg)
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
                 partial = ""
-                token_count = 0
                 error = None
 
                 try:
                     for token in client.stream_chat_completions(messages):
                         partial += token
-                        token_count += 1
                         updated = prior_history + [
                             {"role": "user", "content": msg},
                             {"role": "assistant", "content": partial},
                         ]
-                        progress(min(token_count / 400, 0.95), desc="Receiving response...")
                         yield gr.update(), updated, gallery_html
                 except Exception as e:
                     error = str(e)
@@ -910,7 +904,6 @@ class WorkflowPanel(ABC):
                     self.review_history = final_history
                     self.app.project_state.save_project_state()
 
-                progress(1.0, desc="Done" if not error else "Failed")
                 yield gr.update(), final_history, gallery_html
 
         def _flush_gallery(gallery):
