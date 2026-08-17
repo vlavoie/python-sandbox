@@ -1,6 +1,6 @@
 # TUNING-4: Review skill — prior attempt inventory step
 
-**Skills affected:** `fpv-pov-review.md`
+**Skills affected:** `fpv-pov-review.md`, `fpv-pov-element.md`, finalize review prefix (`finalize_workflow.py`)
 
 ## Problem
 
@@ -20,6 +20,16 @@ The step requires:
 3. The new proposal must use an approach NOT in the tried list, or escalate to a different technique from the escalation list
 4. If all listed approaches have failed → deadlock escalation immediately, no further variations
 
+## Extension — element and finalize (TUNING-4b)
+
+The same root cause applies to element and finalize review loops — both were iterating without synthesizing the trial record.
+
+**fpv-pov-element.md:** Added Step 0 to the reviewing section, before the failure diagnosis list. Escalation ladder is element-specific: border description → interior-viewpoint reasoning → Phase 2 template mode → split generation → deadlock.
+
+**finalize_workflow.py prefix:** Added the prior attempt inventory directly to the dynamically constructed prefix string so it appears before the fpv-pov-review.md content (which is appended afterward but is largely FPV-specific and wouldn't be reached reliably). Escalation ladder is finalize-specific: base preservation front-loading → strip prompt of instruction language → art style naming → identity lock → light source quality language.
+
 ## Key Rule
 
 The model has access to full conversation history but does not synthesize it without explicit instruction. A proactive inventory step — written out as part of the response — forces the model to consult the full trial record before proposing, rather than anchoring on the most recent exchange alone.
+
+**This rule applies to every review loop in the app.** Any new review skill or prefix must include a prior attempt inventory step.

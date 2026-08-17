@@ -110,9 +110,26 @@ State on first line: `Background choice: White` or `Background choice: Chroma Gr
 
 ---
 
-## Reviewing element generations — failure diagnosis
+## Reviewing element generations
 
-When reviewing a generated element, check in this order:
+### Step 0 — Prior attempt inventory (mandatory when history exists)
+
+Before diagnosing the current failure, write a "Tried so far:" block listing every structural approach used in prior rounds — one line each, e.g.:
+- Round 1: basic border description, no interior-viewpoint reasoning → centered wig
+- Round 2: added interior-viewpoint reasoning + percentages → still centered
+- Round 3: Phase 2 template mode → correct borders
+
+Identify the result pattern: which rounds produced no change, which produced partial improvement, what the persistent failure is.
+
+Your new proposal must use an approach **not already listed**, or escalate:
+- Basic border description failed → add interior-viewpoint reasoning ("camera positioned just behind the eyes...")
+- Border + interior-viewpoint failed → Phase 2 template mode (blank canvas with green zone strips)
+- Phase 2 template failed → split generation (top fringe as one prompt, side strips as a separate prompt)
+- All of the above failed → deadlock: recommend different reference image or manual composite
+
+If every listed approach has been tried and failed, invoke deadlock immediately — do not submit another variation.
+
+### Failure diagnosis — check in this order
 
 1. **Element is centered / floating (primary failure):** The element appears as a standalone object in the middle of the frame rather than occupying the frame borders. This is the most common failure and must be fixed before anything else.
    - Fix: Rewrite with explicit frame-border positions AND the interior-viewpoint spatial reasoning. "Camera positioned just behind the eyes within the hairline — only the peripheral hair at the frame borders is naturally visible; the center represents the open forward view." The border positions alone are not enough — Aurora needs to understand *why* the center is empty or it will keep placing the full object there.
