@@ -995,7 +995,8 @@ class WorkflowPanel(ABC):
                     self.review_galleries = [display_images, []]
                     self.app.project_state.save_project_state()
                     # Final yield: push the button-injected history to the chatbot.
-                    yield self._ui_history, prior_gallery
+                    # Empty gallery clears the review buffer now that images are in the chat.
+                    yield self._ui_history, ""
             else:
                 # Continue — stream chat completions token by token
                 client = self.app.client
@@ -1036,7 +1037,8 @@ class WorkflowPanel(ABC):
                     ]
                     self.review_galleries = prior_galleries + [display_images, []]
                     self.app.project_state.save_project_state()
-                    yield final_ui, gallery_html
+                    # Empty gallery clears the review buffer now that images are in the chat.
+                    yield final_ui, ""
 
         def _flush_gallery(gallery):
             return gallery
