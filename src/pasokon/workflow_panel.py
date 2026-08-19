@@ -924,7 +924,8 @@ class WorkflowPanel(ABC):
 
         def _send_start(msg):
             prior_history = list(self._ui_history)
-            prior_gallery = render_gallery_html(self.generated_images or [])
+            # Only show the buffer on a fresh start; follow-up messages carry no buffer.
+            prior_gallery = render_gallery_html(self.generated_images or []) if not self.review_history else ""
             pending = prior_history + [{"role": "user", "content": msg}]
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
@@ -940,9 +941,12 @@ class WorkflowPanel(ABC):
             prior_gallery = render_gallery_html(self.generated_images or [])
 
             # Thumbnails appear below every user message.
-            # Generated images come first; uploaded files are appended to the bundle.
+            # Fresh start: bundle generated images + any uploads.
+            # Follow-up (continue): only explicitly uploaded files — generated images
+            # are already in the review context; re-attaching them every turn would
+            # mislead the user into thinking new images are being sent.
             uploaded_clean = [f for f in (uploaded or []) if f is not None]
-            display_images = list(self.generated_images or []) + uploaded_clean
+            display_images = (list(self.generated_images or []) + uploaded_clean) if not prior_api_history else uploaded_clean
 
             # Build display messages: one text bubble + one image bubble per image.
             display_user_msgs = self._build_display_user_msgs(msg, display_images)
