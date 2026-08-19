@@ -66,6 +66,7 @@ class WorkflowPanel(ABC):
         self._gen_images_btn = None
         self._send_btn = None
         self._prompt_bridge = None
+        self._extract_trigger = None
 
         self._failed_upload = None
         self._num_images_slider = None
@@ -717,11 +718,11 @@ class WorkflowPanel(ABC):
         ]
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
-        """User turn messages: one text bubble, then one image bubble per image."""
+        """User turn messages: one text bubble, then one HTML gallery bubble if images."""
         msgs: List[dict] = [{"role": "user", "content": text}]
-        for img_path in images:
-            if Path(img_path).exists():
-                msgs.append({"role": "user", "content": {"path": img_path}})
+        gallery_html = render_gallery_html(images)
+        if gallery_html:
+            msgs.append({"role": "user", "content": gr.HTML(value=gallery_html)})
         return msgs
 
     # ── UI render ─────────────────────────────────────────────────────────
@@ -755,7 +756,18 @@ class WorkflowPanel(ABC):
         self.failed_gallery = gr.HTML()
         self._gallery_state = gr.State(value="")
         self._chatbot_state = gr.State(value=[])
-        self._prompt_bridge = gr.Textbox(visible=False, elem_id=f"psk-bridge-{self.panel_id}")
+        # Off-screen bridge: elem must stay in DOM so JS can find it.
+        # visible=False removes the element in Gradio 5; use CSS instead.
+        self._prompt_bridge = gr.Textbox(
+            interactive=True,
+            elem_id=f"psk-bridge-{self.panel_id}",
+            elem_classes=["psk-offscreen"],
+        )
+        self._extract_trigger = gr.Button(
+            "x",
+            elem_id=f"psk-trigger-{self.panel_id}",
+            elem_classes=["psk-offscreen"],
+        )
 
     def _get_extract_outputs(self) -> List:
         """Components updated by the Extract button. Override to redirect to a different target."""
@@ -868,7 +880,7 @@ class WorkflowPanel(ABC):
             show_progress="hidden",
         )
 
-        self._prompt_bridge.input(
+        self._extract_trigger.click(
             fn=self._on_bridge_input,
             inputs=[self._prompt_bridge],
             outputs=self._get_extract_outputs(),
@@ -990,14 +1002,15 @@ class WorkflowPanel(ABC):
         def _send_finish():
             return gr.update(value="", interactive=True), gr.update(interactive=True), gr.update(value=None)
 
-        # show_progress="full" on _send_execute gives the native Gradio loading overlay
-        # on review_input for the entire streaming duration. This is the event-kwarg
-        # mechanism — NOT gr.Progress() (the function parameter). The invariant banning
-        # gr.Progress() does not apply here. See ISSUE-23 Instance 3.
+        # show_progress="full" + show_progress_on=review_input targets the native Gradio
+        # loading overlay to the input box only, leaving the chatbot unaffected while
+        # streaming. This is the event-kwarg mechanism — NOT gr.Progress() (the function
+        # parameter). See ISSUE-23 Instance 3.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_input, self.review_chatbot, self._gallery_state],
             show_progress="full",
+            show_progress_on=self.review_input,
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,

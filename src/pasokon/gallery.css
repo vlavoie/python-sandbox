@@ -7,12 +7,25 @@
 }
 
 /* ── Wrap long code blocks (e.g. prompts in review chat) ─────────────── */
-/* Gradio's MarkdownCode CSS uses .md pre with specificity 0-2-1; match it */
+/* MarkdownCode component CSS loads lazily after our injected style, so we  */
+/* need !important to win regardless of load order.                          */
 .gradio-container .md pre {
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-wrap: break-word;
-    overflow: visible;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    overflow: auto;
+}
+
+/* ── Off-screen bridge components (must stay in DOM — no visible=False) ── */
+/* pointer-events intentionally omitted: trigger button needs .click() from JS */
+.psk-offscreen {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
 }
 
 /* ── Extract-prompt button (injected after prompt code blocks) ─────────── */

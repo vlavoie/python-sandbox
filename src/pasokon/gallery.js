@@ -122,18 +122,26 @@
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }, true);
 
-    // ── Extract-prompt button → bridge textbox → Gradio handler ──────────
+    // ── Extract-prompt button → bridge textbox + trigger button → Python ──
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.psk-extract-btn');
         if (!btn) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        const prompt = btn.dataset.prompt;
-        const panelId = btn.dataset.panel;
-        const bridge = document.querySelector(`#psk-bridge-${panelId} textarea`);
-        if (!bridge) return;
+        const prompt   = btn.dataset.prompt;
+        const panelId  = btn.dataset.panel;
+        const bridge   = document.querySelector(`#psk-bridge-${panelId} textarea`)
+                      || document.querySelector(`#psk-bridge-${panelId} input`);
+        const trigger  = document.querySelector(`#psk-trigger-${panelId} button`);
+        if (!bridge || !trigger) {
+            console.error('[pasokon] extract bridge not found for panel:', panelId);
+            return;
+        }
+        // Update bridge value so Gradio reads it when the trigger button fires.
         bridge.value = prompt;
-        bridge.dispatchEvent(new Event('input', { bubbles: true }));
+        bridge.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        // Defer click so Gradio processes the input event first.
+        requestAnimationFrame(() => trigger.click());
     }, true);
 
     // ── Thumbnail click → lightbox ─────────────────────────────────────

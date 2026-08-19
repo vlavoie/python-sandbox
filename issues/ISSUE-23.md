@@ -63,12 +63,14 @@ After Instance 1 removed `gr.Progress()` from `_send_execute`, `show_progress="h
 
 ### Fix (definitive)
 
-Changed `_send_execute`'s event kwarg from `show_progress="hidden"` to `show_progress="full"`.
+`show_progress="full", show_progress_on=self.review_input` on `_send_execute`'s event kwargs.
 
-**Why this is safe:** `show_progress` (the event kwarg) is completely separate from `gr.Progress()` (the function parameter). The invariant in this file bans `gr.Progress()` — it says nothing about `show_progress`. `show_progress="full"` puts Gradio's native loading overlay on the output components (`review_input` gets the dimmed + spinner overlay) without touching the `gr.Progress()` mechanism. `review_chatbot` with `show_progress="full"` just shows its natural typing indicator, which is expected behavior during streaming.
+`show_progress_on` is a Gradio 5 parameter (discovered in `blocks.py` line 624) that restricts the loading overlay to specific components. Without it, `show_progress="full"` overlays ALL output components. With `show_progress_on=self.review_input`, only the input box gets the native spinner overlay — the chatbot is unaffected while streaming.
+
+**Why this is safe:** `show_progress` (event kwarg) is completely separate from `gr.Progress()` (function parameter). The invariant banning `gr.Progress()` does not apply.
 
 **Key distinction to preserve:**
-- `show_progress="full"` on `_send_execute` → native Gradio overlay on review_input ✓ CORRECT
+- `show_progress="full", show_progress_on=self.review_input` on `_send_execute` → native overlay on input only ✓ CORRECT
 - `progress=gr.Progress()` in `_send_execute` → GENERATING bar overlays ALL visual outputs including chatbot ✗ BANNED
 
 ### Note on gr.MultimodalTextbox
