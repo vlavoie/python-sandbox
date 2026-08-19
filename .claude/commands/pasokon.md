@@ -148,6 +148,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-28.md` — [bug] user message bubble empty until first token; Gradio clears generator outputs before first yield — always re-emit desired state as first yield
 - `issues/ISSUE-29.md` — [feature] per-prompt and aggregate project cost tracking; cost_log persisted in panel state, shown in work item label
 - `issues/ISSUE-30.md` — [bug] FPV and Element serialize() reimplemented base fields; cost_log never saved or loaded for those panels (FPV also missing super().deserialize())
+- `issues/ISSUE-31.md` — [feature] image thumbnails in review chat user messages; separate _ui_history (display) from review_history (API); upload box cleared after send
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present

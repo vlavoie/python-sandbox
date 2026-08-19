@@ -78,6 +78,10 @@ class WorkflowPanel(ABC):
 
         # Session-only (not persisted) — tracks last prompt sent to the API
         self._last_submitted_prompt: str = ""
+        # Display history for the chatbot UI — parallel to review_history but may
+        # include base64-embedded image thumbnails in user messages.  Never sent
+        # to the API; reset to text-only review_history on project load.
+        self._ui_history: List = []
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -206,7 +210,7 @@ class WorkflowPanel(ABC):
             gr.update(value=self.current_prompt),
             gr.update(value=render_gallery_html(review_images)),
             gr.update(value=render_gallery_html(self.generated_images or [])),
-            gr.update(value=self.review_history),
+            gr.update(value=self._ui_history),
             gr.update(value=self.image_model),
             gr.update(value=self.image_resolution if is_aurora else "auto", interactive=is_aurora),
             gr.update(value=self.aspect_ratio),
@@ -682,6 +686,15 @@ class WorkflowPanel(ABC):
         # The first send_message call will invoke start_review, which rebuilds
         # context from self.generated_images (permanent paths, always current).
         self.review_context = {}
+        # _ui_history is display-only; initialize as text-only copy of review_history.
+        # Image thumbnails are re-added only as new messages are sent this session.
+        self._ui_history = list(self.review_history)
+
+    def _build_display_user_msg(self, text: str, images: List[str]) -> dict:
+        """User message dict with gallery thumbnails embedded after the text."""
+        gallery_html = render_gallery_html(images)
+        content = (text + "\n\n" + gallery_html) if gallery_html else text
+        return {"role": "user", "content": content}
 
     # ── UI render ─────────────────────────────────────────────────────────
 
@@ -699,6 +712,7 @@ class WorkflowPanel(ABC):
             show_label=False,
             bubble_full_width=False,
             type="messages",
+            sanitize_html=False,
         )
         with gr.Row(equal_height=True):
             self.review_input = gr.Textbox(
@@ -843,7 +857,7 @@ class WorkflowPanel(ABC):
         """Wire the send/submit 3-step chain. Called from _wire_events() and subclass overrides."""
 
         def _send_start(msg):
-            prior_history = list(self.review_history)
+            prior_history = list(self._ui_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
             # Show the user message immediately; Gradio's native typing indicator
             # signals "assistant is thinking" while the streaming generator runs.
@@ -852,12 +866,26 @@ class WorkflowPanel(ABC):
 
         def _send_execute(msg, uploaded):
             msg = (msg or "").strip() or "Review these"
-            prior_history = list(self.review_history)
+            prior_ui_history = list(self._ui_history)
+            prior_api_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
+            # Determine images to show as thumbnails under this user message.
+            # First message: show the images being sent for review.
+            # Continuation with uploads: show the uploaded images.
+            # Continuation without uploads: no thumbnail strip.
+            if uploaded:
+                display_images = [f for f in uploaded if f is not None]
+            elif not self.review_history:
+                display_images = list(self.generated_images or [])
+            else:
+                display_images = []
+
+            display_user_msg = self._build_display_user_msg(msg, display_images)
+
             # Gradio clears generator outputs before the first yield.
-            # Re-emit the user message immediately so it stays visible during the API wait.
-            yield gr.update(), prior_history + [{"role": "user", "content": msg}], prior_gallery
+            # Re-emit immediately with the image-enhanced user message.
+            yield gr.update(), prior_ui_history + [display_user_msg], prior_gallery
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -866,8 +894,8 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield gr.update(), prior_history + [
-                        {"role": "user", "content": msg},
+                    yield gr.update(), prior_ui_history + [
+                        display_user_msg,
                         {"role": "assistant", "content": err},
                     ], prior_gallery
                     return
@@ -880,23 +908,23 @@ class WorkflowPanel(ABC):
                 had_yield = False
                 for partial_history, images in self.stream_start_review(msg, uploaded):
                     had_yield = True
-                    yield gr.update(), partial_history, render_gallery_html(images) if images else prior_gallery
+                    # Replace the text-only user msg from stream_start_review with the
+                    # display version that includes image thumbnails.
+                    display_partial = [display_user_msg] + partial_history[1:]
+                    yield gr.update(), display_partial, render_gallery_html(images) if images else prior_gallery
                 if not had_yield:
                     err = "❌ Could not start review. Re-generate images first."
-                    yield (
-                        gr.update(),
-                        prior_history + [{"role": "user", "content": msg}, {"role": "assistant", "content": err}],
-                        prior_gallery,
-                    )
+                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err}], prior_gallery
+                elif self.review_history:
+                    # Sync _ui_history: keep the display user message but use
+                    # the assistant reply that stream_start_review saved.
+                    self._ui_history = [display_user_msg] + list(self.review_history[1:])
             else:
                 # Continue — stream chat completions token by token
                 client = self.app.client
                 if not client:
                     err = "❌ Client not initialized."
-                    yield gr.update(), prior_history + [
-                        {"role": "user", "content": msg},
-                        {"role": "assistant", "content": err},
-                    ], prior_gallery
+                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err}], prior_gallery
                     return
 
                 messages = self._build_continue_review_messages(msg)
@@ -907,41 +935,33 @@ class WorkflowPanel(ABC):
                 try:
                     for token in client.stream_chat_completions(messages):
                         partial += token
-                        updated = prior_history + [
-                            {"role": "user", "content": msg},
+                        yield gr.update(), prior_ui_history + [
+                            display_user_msg,
                             {"role": "assistant", "content": partial},
-                        ]
-                        yield gr.update(), updated, gallery_html
+                        ], gallery_html
                 except Exception as e:
                     error = str(e)
 
                 if error:
                     err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
-                    final_history = prior_history + [
-                        {"role": "user", "content": msg},
-                        {"role": "assistant", "content": err_content},
-                    ]
+                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err_content}], gallery_html
                 elif not partial:
-                    final_history = prior_history + [
-                        {"role": "user", "content": msg},
-                        {"role": "assistant", "content": "❌ No response received."},
-                    ]
-                    error = "empty"
+                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": "❌ No response received."}], gallery_html
                 else:
-                    final_history = prior_history + [
+                    final_ui = prior_ui_history + [display_user_msg, {"role": "assistant", "content": partial}]
+                    self._ui_history = final_ui
+                    self.review_history = prior_api_history + [
                         {"role": "user", "content": msg},
                         {"role": "assistant", "content": partial},
                     ]
-                    self.review_history = final_history
                     self.app.project_state.save_project_state()
-
-                yield gr.update(), final_history, gallery_html
+                    yield gr.update(), final_ui, gallery_html
 
         def _flush_gallery(gallery):
             return gallery
 
         def _send_finish():
-            return gr.update(value="", interactive=True), gr.update(interactive=True)
+            return gr.update(value="", interactive=True), gr.update(interactive=True), gr.update(value=None)
 
         # _send_execute is now a streaming generator that updates review_chatbot directly.
         # _gallery_state still buffers the failed gallery for the hidden flush step.
@@ -961,7 +981,7 @@ class WorkflowPanel(ABC):
         )
         _finish_event_kwargs = dict(
             fn=_send_finish,
-            outputs=[self.review_input, self._send_btn],
+            outputs=[self.review_input, self._send_btn, self._failed_upload],
             show_progress="hidden",
         )
 
