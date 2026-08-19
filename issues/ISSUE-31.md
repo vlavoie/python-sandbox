@@ -8,8 +8,9 @@ shows thumbnails of the images involved:
 - **Uploaded files present**: thumbnails of the uploaded images appear below the message.
 - **No uploads**: thumbnails of `generated_images` appear below every message.
 
-On project reload, the gallery is re-injected after every user message in the restored
-`review_history` so the visual history matches what was shown when the messages were sent.
+On project reload, each user message's gallery is restored exactly as it was when sent,
+using `review_galleries` — a list parallel to `review_history` where each entry is the
+image paths shown with that message (`[]` for assistant messages and messages with no gallery).
 
 Thumbnails use the existing `psk-gallery` / `psk-thumb` CSS classes and the
 `render_gallery_html` helper, so they match the gallery styling.
@@ -108,7 +109,9 @@ message of any session regardless of whether `review_history` was restored from 
 - `review_history` must stay text-only — never add component or file dicts to it.
 - `_ui_history` is session-only — do not serialize it.
 - Every user message always gets a gallery bubble — no session flag, no "first message only" guard.
-- `deserialize()` injects a gallery bubble after EVERY user message in the restored history (not just the first). The same `gallery_msg` dict is reused across all insertions since `ComponentMessage` is immutable.
+- `review_galleries` is a `List[List[str]]` parallel to `review_history`. User messages hold the image paths shown; assistant messages hold `[]`. Serialized to disk with `review_history`.
+- `review_galleries` must be kept in sync with `review_history` — cleared in `_start_new_prompt`, set to `[display_images, []]` after fresh start, extended with `[display_images, []]` after each continuation.
+- `deserialize()` rebuilds `_ui_history` by iterating `review_history` and injecting a gallery bubble after each user message whose `review_galleries[i]` is non-empty.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
 - Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.

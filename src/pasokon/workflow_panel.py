@@ -49,6 +49,9 @@ class WorkflowPanel(ABC):
         self.iteration_count: int = 0
         self.work_item: int = 1
         self.review_history: List = []
+        # Parallel to review_history — image paths shown with each message.
+        # User messages: List[str] of paths; assistant messages: [].
+        self.review_galleries: List = []
         self.review_context: dict = {}
         self.cost_log: List[Dict] = []
         # Per-panel model/quality settings — initialized from panel defaults
@@ -145,6 +148,7 @@ class WorkflowPanel(ABC):
             self.iteration_count = 0
             self.generated_images = []
         self.review_history = []
+        self.review_galleries = []
         self.review_context = {}
 
     def render_prompt_tab_content(self) -> None:
@@ -699,6 +703,7 @@ class WorkflowPanel(ABC):
             "iteration_count": self.iteration_count,
             "work_item": self.work_item,
             "review_history": self.review_history,
+            "review_galleries": self.review_galleries,
             "review_context": self.review_context,
             "cost_log": self.cost_log,
             "image_model": self.image_model,
@@ -717,39 +722,33 @@ class WorkflowPanel(ABC):
         self.image_resolution = d.get("image_resolution", self.default_image_resolution)
         self.aspect_ratio = d.get("aspect_ratio", self.default_aspect_ratio)
         self.review_history = d.get("review_history", [])
+        self.review_galleries = d.get("review_galleries", [])
         # Always reset review_context on load — its failed_images may be stale.
         # The first send_message call will invoke start_review, which rebuilds
         # context from self.generated_images (permanent paths, always current).
         self.review_context = {}
-        # _ui_history is display-only; initialize with extract buttons injected
-        # into assistant messages.
-        self._ui_history = [
-            {**m, "content": self._inject_extract_buttons(m["content"])}
-            if m.get("role") == "assistant" and m.get("content")
-            else m
-            for m in self.review_history
-        ]
-        # Re-inject a thumbnail gallery after every user message so the restored
-        # chat history matches what was displayed when the messages were sent.
-        # generated_images is already restored above so the paths are available.
-        if self._ui_history and self.generated_images:
-            gallery_html = render_gallery_html(self.generated_images)
-            if gallery_html:
-                gallery_msg = {
-                    "role": "user",
-                    "content": ComponentMessage(
-                        component="html",
-                        value=gallery_html,
-                        constructor_args={},
-                        props={},
-                    ),
-                }
-                injected: List = []
-                for m in self._ui_history:
-                    injected.append(m)
-                    if m.get("role") == "user":
-                        injected.append(gallery_msg)
-                self._ui_history = injected
+        # Rebuild _ui_history with gallery bubbles for messages that had them.
+        # review_galleries[i] holds the image paths shown with review_history[i].
+        self._ui_history = []
+        for i, m in enumerate(self.review_history):
+            if m.get("role") == "assistant" and m.get("content"):
+                self._ui_history.append({**m, "content": self._inject_extract_buttons(m["content"])})
+            else:
+                self._ui_history.append(m)
+            if m.get("role") == "user":
+                gallery_paths = self.review_galleries[i] if i < len(self.review_galleries) else []
+                if gallery_paths:
+                    gallery_html = render_gallery_html(gallery_paths)
+                    if gallery_html:
+                        self._ui_history.append({
+                            "role": "user",
+                            "content": ComponentMessage(
+                                component="html",
+                                value=gallery_html,
+                                constructor_args={},
+                                props={},
+                            ),
+                        })
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
         """User turn messages: one text bubble, then one HTML gallery bubble if images."""
@@ -935,6 +934,7 @@ class WorkflowPanel(ABC):
             msg = (msg or "").strip() or "Review these"
             prior_ui_history = list(self._ui_history)
             prior_api_history = list(self.review_history)
+            prior_galleries = list(self.review_galleries)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
             # Thumbnails appear below every user message.
@@ -988,6 +988,8 @@ class WorkflowPanel(ABC):
                         for m in self.review_history[1:]
                     ]
                     self._ui_history = display_user_msgs + tail
+                    self.review_galleries = [display_images, []]
+                    self.app.project_state.save_project_state()
                     # Final yield: push the button-injected history to the chatbot.
                     yield self._ui_history, prior_gallery
             else:
@@ -1028,6 +1030,7 @@ class WorkflowPanel(ABC):
                         {"role": "user", "content": msg},
                         {"role": "assistant", "content": partial},
                     ]
+                    self.review_galleries = prior_galleries + [display_images, []]
                     self.app.project_state.save_project_state()
                     yield final_ui, gallery_html
 
