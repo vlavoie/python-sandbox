@@ -1,84 +1,103 @@
-# ISSUE-32 — [feature] Click prompt code block button to extract prompt
+# ISSUE-32 — [feature] "↗ Use this prompt" button in review chat
 
 ## What was added
 
-Replaced the "Extract Final Prompt" button at the bottom of the Review tab with a
-small "↗ Use this prompt" button rendered directly after each prompt code block in
-the assistant's messages. Clicking that button copies the prompt to the prompt box
-and switches to the Generate Images tab.
+Replaced the "Extract Final Prompt" button at the bottom of the Review tab with a small
+"↗ Use this prompt" button rendered directly after each prompt code block in assistant
+messages. Clicking it copies the prompt to the prompt box and switches to the
+Generate Images tab.
 
-## Implementation
+## Implementation (current state)
 
-### Pattern: button visual affordance + chatbot select event
+### `_inject_extract_buttons(content: str) -> str`
 
-`review_chatbot.select()` fires on any click in the chatbot with `evt.value` = the full
-message content. The guard `"```" not in content` makes it a no-op for analysis messages.
-Only messages that contain a prompt code block (with ` ``` ` fences) trigger extraction:
+Called on every assistant message before it enters `_ui_history`. Finds ` ``` ` fenced
+blocks, runs `GrokClient._clean_prompt_text` on them, and for each non-empty result
+**replaces** the raw fence block with:
 
-1. `_inject_extract_buttons(content)` appends
-   `<button class="psk-extract-btn" ...>↗ Use this prompt</button>` after each
-   ` ``` ` block that `_clean_prompt_text` returns non-empty for. This makes the
-   button visible but clicking it or anywhere else in the message both work.
-2. `review_chatbot.select` → `_on_message_select(evt)` checks for ` ``` ` in
-   `evt.value`, calls `_clean_prompt_text`, and if the result differs from the raw
-   content (meaning it extracted from a fence), returns the prompt + tab switch.
+1. A `<pre style="...">` rendering the prompt text (HTML-escaped body)
+2. `<button class="psk-extract-btn" data-panel="{panel_id}" data-prompt="{escaped}">↗ Use this prompt</button>`
 
-No JS bridge is needed — the click bubbles naturally to the chatbot's Gradio select handler.
+`data-prompt` is `html.escape(cleaned, quote=True)` — double-quote safe, no raw backticks.
+
+`review_history` (the API history) is **never** touched; buttons live only in `_ui_history`.
+
+### `_on_message_select(evt: gr.SelectData) -> Tuple[Any, Any]`
+
+Wired to `review_chatbot.select()`. `evt.value` is the full HTML content of the clicked
+message (from `_ui_history`).
+
+Guard: `"psk-extract-btn" not in content` → no-op. This is correct because `_inject_extract_buttons`
+replaced all ` ``` ` fences with `<pre>` tags — raw backticks are absent from `_ui_history`.
+If the guard checked `"```"` it would always return no-op and the button would never work.
+
+Extraction: `re.search(r'data-prompt="([^"]*)"', content)` + `html.unescape(m.group(1))`.
+Returns `(prompt, gr.update(selected=f"{panel_id}_gen_images"))`.
+
+### Cursor override (gallery.css)
+
+Gradio sets `cursor: pointer` on **all** chatbot messages (user and bot alike) when
+`select()` is wired on the chatbot. Override added:
+
+```css
+.psk-review-chatbot * {
+    cursor: default !important;
+}
+.psk-review-chatbot .psk-extract-btn {
+    cursor: pointer !important;
+}
+```
+
+Scoped to `.psk-review-chatbot` so it doesn't affect the review input / send button below.
+
+### JS guard (gallery.js)
+
+A capture-phase `stopImmediatePropagation()` handler blocks non-button message clicks
+from reaching Gradio's internal event dispatch. Note: Gradio 5 fires the chatbot `select`
+event via Svelte's internal dispatch, not DOM bubbling, so this guard does **not** prevent
+the select from firing on code block clicks — that's handled by the Python guard above.
+The JS handler is harmless but not the primary defence.
 
 ### Where buttons are injected
 
-- **`_send_execute` continue path**: injects into `display_content` before the final
+- **`_send_execute` continue path** — injects into `display_content` before the final
   `_ui_history` assignment and last yield.
-- **`stream_start_review` path**: injects into the tail slice of `review_history` when
-  syncing `_ui_history`, then emits a final yield so the chatbot shows the buttons
-  immediately (without waiting for the next message).
-- **`deserialize`**: injects into the copy of `review_history` used as `_ui_history`
-  so restored sessions show buttons on existing messages immediately on load.
+- **`stream_start_review` path** — injects into the tail slice of `review_history` when
+  building `_ui_history`, then emits a final yield so buttons appear immediately without
+  waiting for the next message.
+- **`deserialize`** — builds `_ui_history` with buttons injected from the persisted
+  `review_history` so restored sessions show buttons on load.
+- **`fpv_workflow.py` `get_ui_restore_values()`** — passes `self._ui_history` (not
+  `self.review_history`) to the chatbot update; critical for buttons to show on project load
+  in the FPV panel, which reimplements this method without calling `super()`.
 
-### Guard in `_on_message_select`
+## Regression history
 
-```
-if "```" not in content: return no-op
-cleaned = _clean_prompt_text(content)
-if cleaned and cleaned != content.strip(): return cleaned + tab switch
-```
+### Attempt 1
+`_inject_extract_buttons` appended the button **after** raw ` ``` ` fences (did not
+replace them). `_on_message_select` guarded on `"```" in content` and called
+`_clean_prompt_text` to strip the fence. Worked.
 
-`cleaned != content.strip()` ensures we only extract when the fence was actually
-stripped — if the whole message is plain text, `_clean_prompt_text` returns it
-unchanged, which would be a false positive.
+### Regression
+`_inject_extract_buttons` was changed to **replace** fences with `<pre>` tags (cleaner
+rendering). Raw backticks no longer appear in `_ui_history` or `evt.value`. The `"```"`
+guard fired immediately for every click — the button stopped working.
 
-### Other changes
-
-- `_extract_btn`, `extract_prompt()`, separator/label UI, JS bridge, and offscreen
-  components are all removed.
-- `.psk-extract-btn` button styles in `gallery.css`.
-- `_get_extract_outputs()` override contract is unchanged.
-- `review_history` (the API history) is never modified — buttons only in `_ui_history`.
-
-## Attempt 2 — regression fix (button broken + code blocks look clickable)
-
-### Root cause
-
-`_inject_extract_buttons` was changed to replace ` ``` ` fences with `<pre>` tags, so
-`_ui_history` messages no longer contain backticks. `_on_message_select` guarded on
-`"```" not in content` — which was now always true — so every select event returned
-no-op, including button clicks.
-
-### Fixes
-
-1. **`_on_message_select`**: changed guard from `"```"` check to `"psk-extract-btn"` check;
-   reads the prompt from the `data-prompt` HTML attribute via `re.search` + `html.unescape`
-   instead of `_clean_prompt_text`. The attribute is already `html.escape(quote=True)` encoded.
-
-2. **`gallery.css`**: added cursor overrides — Gradio sets `cursor:pointer` on the whole
-   message bubble when `select()` is wired; override it to `default` for `.psk-review-chatbot
-   .message` and restore `pointer` only on `.psk-extract-btn`.
+### Attempt 2 (current)
+Guard changed to `"psk-extract-btn"`. Prompt read from `data-prompt` attribute directly
+instead of re-parsing fences. Cursor override broadened from `.message` (wrong Gradio 5
+class name) to `*` to cover all elements regardless of Gradio's internal class names.
 
 ## Key invariants
 
-- `data-prompt` attr uses `html.escape(..., quote=True)` — extraction reads it directly
-  via `data-prompt="([^"]*)"` regex + `html.unescape`. Do not use `_clean_prompt_text` here.
-- `_on_message_select` must guard on `"psk-extract-btn"`, NOT `"```"` — code fences are
-  replaced by `<pre>` tags in `_ui_history` and are absent from `evt.value`.
-- The final yield after `stream_start_review` is critical: without it the chatbot
-  stays on the streaming version (no buttons) until the next message is sent.
+- **Guard must check `"psk-extract-btn"`**, not `"```"`. Code fences are gone from
+  `_ui_history` — checking backticks silently disables all extractions.
+- **Extract from `data-prompt`**, not by re-parsing content. `_clean_prompt_text` would
+  fail because there are no fences left in `evt.value`.
+- **`_inject_extract_buttons` only touches `_ui_history`** — never `review_history`.
+- **Cursor override uses `*`** — Gradio applies `cursor:pointer` to every message element
+  (user + bot) when `select()` is wired; Gradio 5's internal class names are not stable.
+- **Final yield after `stream_start_review`** is critical — without it the chatbot shows
+  the streaming version (no buttons) until the next message is sent.
+- **FPV panel `get_ui_restore_values()`** must pass `self._ui_history` to the chatbot
+  update. It reimplements the method without calling `super()`, so this must be explicit.

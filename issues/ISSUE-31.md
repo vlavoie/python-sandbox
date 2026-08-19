@@ -2,15 +2,14 @@
 
 ## What was added
 
-When a message is sent in the Review & Correct chat, the user's message bubble now
+When a message is sent in the Review & Correct chat, the user's message bubble always
 shows thumbnails of the images involved:
 
-- **First message of the session**: thumbnails of all generated images (or uploaded
-  images if the upload box is used) appear below the message text. This fires once per
-  project load, regardless of whether `review_history` was restored from disk.
-- **Continuation messages with uploaded files**: thumbnails of the newly uploaded images
-  appear below the message text.
-- **Continuation messages without uploads**: no thumbnail strip (plain text only).
+- **Uploaded files present**: thumbnails of the uploaded images appear below the message.
+- **No uploads**: thumbnails of `generated_images` appear below every message.
+
+On project reload, the gallery is re-injected after every user message in the restored
+`review_history` so the visual history matches what was shown when the messages were sent.
 
 Thumbnails use the existing `psk-gallery` / `psk-thumb` CSS classes and the
 `render_gallery_html` helper, so they match the gallery styling.
@@ -108,7 +107,8 @@ message of any session regardless of whether `review_history` was restored from 
 
 - `review_history` must stay text-only — never add component or file dicts to it.
 - `_ui_history` is session-only — do not serialize it.
-- `_thumbnails_shown` is session-only — always `False` after `__init__` and `deserialize()`. Never serialize. The gallery injected into restored history during `deserialize` and the gallery attached to the first new message are independent: both correctly show the current `generated_images`.
+- Every user message always gets a gallery bubble — no session flag, no "first message only" guard.
+- `deserialize()` injects a gallery bubble after EVERY user message in the restored history (not just the first). The same `gallery_msg` dict is reused across all insertions since `ComponentMessage` is immutable.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
 - Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.

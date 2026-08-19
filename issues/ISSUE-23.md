@@ -100,6 +100,8 @@ Two separate problems, same session:
 
 **Overlay:** CSS override in `gallery.css` targeting `.gradio-container .wrap.generating` (0,3,0 specificity beats compiled Svelte's 0,2,0). Overrides the transparent background with `var(--block-background-fill)` and replaces `pulseStart` with an immediate pulsing animation that starts at full opacity.
 
+**Elapsed timer:** CSS-only approach (animating `@property <integer>` → `counter-reset` → `counter()`) does NOT work: `counter-reset` doesn't re-evaluate when a CSS custom property changes via animation. Fix: `gallery.js` uses a `MutationObserver` that watches for `.wrap.generating` class changes, runs a `setInterval` (500ms), and writes `--psk-timer` as a quoted string on `:root` (e.g., `'"5s"'`). `gallery.css` reads it with `content: var(--psk-timer, "0s")` in `.wrap.generating::after`.
+
 **"...":** Added a `{"role": "assistant", "content": "..."}` yield immediately before each API call in `_send_execute` (both the `stream_start_review` and `stream_chat_completions` paths). This shows a thinking indicator in the chatbot during the gap between user message submission and first API token.
 
 ### Key invariants

@@ -85,10 +85,6 @@ class WorkflowPanel(ABC):
         # include base64-embedded image thumbnails in user messages.  Never sent
         # to the API; reset to text-only review_history on project load.
         self._ui_history: List = []
-        # Set to True after the first message of each session has shown thumbnails.
-        # Using review_history as the guard would skip thumbnails when history is
-        # loaded from disk — this flag resets on every project load instead.
-        self._thumbnails_shown: bool = False
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -733,32 +729,27 @@ class WorkflowPanel(ABC):
             else m
             for m in self.review_history
         ]
-        self._thumbnails_shown = False
-        # Re-inject the thumbnail gallery after the first user message so the
-        # chat history shows the images that were under review. generated_images
-        # is already restored above, so the paths are available.
+        # Re-inject a thumbnail gallery after every user message so the restored
+        # chat history matches what was displayed when the messages were sent.
+        # generated_images is already restored above so the paths are available.
         if self._ui_history and self.generated_images:
             gallery_html = render_gallery_html(self.generated_images)
             if gallery_html:
-                first_user_idx = next(
-                    (i for i, m in enumerate(self._ui_history) if m.get("role") == "user"),
-                    None,
-                )
-                if first_user_idx is not None:
-                    self._ui_history.insert(
-                        first_user_idx + 1,
-                        {
-                            "role": "user",
-                            "content": ComponentMessage(
-                                component="html",
-                                value=gallery_html,
-                                constructor_args={},
-                                props={},
-                            ),
-                        },
-                    )
-                    # _thumbnails_shown stays False so the first NEW message
-                    # sent this session also gets a gallery bubble.
+                gallery_msg = {
+                    "role": "user",
+                    "content": ComponentMessage(
+                        component="html",
+                        value=gallery_html,
+                        constructor_args={},
+                        props={},
+                    ),
+                }
+                injected: List = []
+                for m in self._ui_history:
+                    injected.append(m)
+                    if m.get("role") == "user":
+                        injected.append(gallery_msg)
+                self._ui_history = injected
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
         """User turn messages: one text bubble, then one HTML gallery bubble if images."""
@@ -946,21 +937,10 @@ class WorkflowPanel(ABC):
             prior_api_history = list(self.review_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
 
-            # Determine images to show as thumbnails under this user message.
-            # First message of any session: show generated images (loaded history
-            # does NOT suppress this — _thumbnails_shown resets on project load).
-            # Continuation with uploads: show the uploaded images.
-            # Continuation without uploads: no thumbnail strip.
+            # Thumbnails appear below every user message.
+            # Uploaded files take priority; fall back to generated images.
             uploaded_clean = [f for f in (uploaded or []) if f is not None]
-            if uploaded_clean:
-                display_images = uploaded_clean
-            elif not self._thumbnails_shown:
-                display_images = list(self.generated_images or [])
-            else:
-                display_images = []
-
-            if display_images:
-                self._thumbnails_shown = True
+            display_images = uploaded_clean or list(self.generated_images or [])
 
             # Build display messages: one text bubble + one image bubble per image.
             display_user_msgs = self._build_display_user_msgs(msg, display_images)

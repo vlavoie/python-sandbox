@@ -20,33 +20,19 @@
 /* Gradio's .generating style fades in over 1s (pulseStart: 0→1 opacity). */
 /* ISSUE-28's immediate first yield switches "pending" → "generating"      */
 /* instantly, so the solid overlay flashes away and the fading border is   */
-/* invisible for ~1s. This override: solid background + instant pulse +    */
-/* CSS-driven elapsed timer via @property integer animation.               */
-/*                                                                          */
-/* Browser support: @property requires Chrome 85+, Firefox 128+,           */
-/* Safari 16.4+. Older browsers see "0s" (non-animating counter). The      */
-/* overlay itself (background + pulse) works in all browsers.              */
-@property --pasokon-timer {
-    syntax: '<integer>';
-    initial-value: 0;
-    inherits: false;
-}
+/* invisible for ~1s. This override: solid background + instant pulse.     */
+/* The elapsed timer ("0s", "1s", ...) is JS-driven via gallery.js which   */
+/* writes --psk-timer on :root; CSS reads it here via var().               */
 .gradio-container .wrap.generating {
     background: var(--block-background-fill) !important;
-    --pasokon-timer: 0;
-    counter-reset: pasokon-elapsed var(--pasokon-timer);
-    animation: pasokon-generating 1.3s ease-in-out infinite,
-               pasokon-count 300s steps(300, end) forwards !important;
+    animation: pasokon-generating 1.3s ease-in-out infinite !important;
 }
 @keyframes pasokon-generating {
     0%, 100% { opacity: 0.88; }
     50%       { opacity: 0.52; }
 }
-@keyframes pasokon-count {
-    to { --pasokon-timer: 300; }
-}
 .gradio-container .wrap.generating::after {
-    content: counter(pasokon-elapsed) "s";
+    content: var(--psk-timer, "0s");
     font-size: 0.75rem;
     color: var(--body-text-color-subdued, rgba(127, 127, 127, 0.85));
     font-family: var(--font-mono, monospace);

@@ -160,4 +160,36 @@
         const thumbs  = gallery ? [...gallery.querySelectorAll('.psk-thumb')] : [e.target];
         open(thumbs.map(t => t.src), thumbs.indexOf(e.target));
     }, true);
+
+    // ── Review input generating overlay: elapsed-seconds timer ───────────
+    // Drives --psk-timer on :root; gallery.css reads it in .wrap.generating::after.
+    // @property integer animation (CSS-only) does not re-evaluate counter-reset,
+    // so JS is the reliable driver here.
+    let _pskTimerInterval = null;
+    let _pskTimerStart    = null;
+
+    const _pskStartTimer = () => {
+        if (_pskTimerInterval) return;
+        _pskTimerStart = Date.now();
+        document.documentElement.style.setProperty('--psk-timer', '"0s"');
+        _pskTimerInterval = setInterval(() => {
+            const s = Math.floor((Date.now() - _pskTimerStart) / 1000);
+            document.documentElement.style.setProperty('--psk-timer', '"' + s + 's"');
+        }, 500);
+    };
+
+    const _pskStopTimer = () => {
+        if (!_pskTimerInterval) return;
+        clearInterval(_pskTimerInterval);
+        _pskTimerInterval = null;
+        document.documentElement.style.removeProperty('--psk-timer');
+    };
+
+    new MutationObserver(() => {
+        if (document.querySelector('.gradio-container .wrap.generating')) {
+            _pskStartTimer();
+        } else {
+            _pskStopTimer();
+        }
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
 }

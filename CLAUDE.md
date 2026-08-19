@@ -33,3 +33,5 @@ tuning/               — model/prompt adjustments to fpv-pov-image.md and fpv-p
 - State mutations must happen BEFORE `save_project_state()`, never after
 - `OUTPUTS_PROJECT` and `_build_project_outputs()` must stay in sync (count + order)
 - `resolution` API param is only for `grok-imagine-image-2.0`
+- `_inject_extract_buttons` replaces ` ``` ` fences with `<pre>` tags — raw backticks are gone from `_ui_history`. `_on_message_select` must guard on `"psk-extract-btn"`, NOT `"```"` (see ISSUE-32)
+- Wiring `select()` on a `gr.Chatbot` makes Gradio set `cursor:pointer` on ALL messages (user + bot); override with `.psk-review-chatbot * { cursor:default !important }` in gallery.css (see ISSUE-32)
