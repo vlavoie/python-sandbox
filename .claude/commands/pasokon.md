@@ -55,9 +55,10 @@ Current functions that declare `gr.Progress()`: `generate_images_batch`, `_do_fo
 - `generate_images_batch` / `_do_force_generate` outputs: `[output_gallery, failed_gallery, _dup_confirm_row, _gen_images_btn, _gen_anyway_btn]` — no chatbot ✓
 - `do_generate_prompt` outputs: `[prompt_box, panel_tabs, _gen_prompt_btn]` — chatbot cleared by a separate `.then()` with no `gr.Progress()` ✓
 
-- `_send_execute` (chat handler) must never have `gr.Progress()`. Streaming text is the feedback.
-- All event handlers use `show_progress="hidden"` except generate buttons which use `show_progress="minimal"`.
-- See ISSUE-23 for full history (8+ attempts, 2 confirmed instances).
+- `_send_execute` (chat handler) must never have `gr.Progress()`. Use `show_progress="minimal"` instead — this provides the loading indicator on the trigger component for the full streaming duration WITHOUT the chatbot overlay. `show_progress` is safe with `review_chatbot` in outputs; `gr.Progress()` is not.
+- Generate buttons use `show_progress="minimal"` + `gr.Progress()` (no chatbot in their outputs — safe).
+- All other event handlers use `show_progress="hidden"`.
+- See ISSUE-23 for full history (8+ attempts, 3 confirmed instances).
 
 ### review_context is session-only
 `review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.
@@ -139,7 +140,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-20.md` — [feature] per-work-item reference snapshots: references/ folder created inside work-item-N/ on iteration 0
 - `issues/ISSUE-21.md` — [feature] Review tab for Finalize; extracted _render_review_tab_content/_wire_review_events/_get_extract_outputs helpers to WorkflowPanel
 - `issues/ISSUE-22.md` — [bug] review chat progress bar stuck at 0%; fixed by streaming API response token-by-token via stream_chat_completions/stream_review_images/stream_start_review
-- `issues/ISSUE-23.md` — [bug] gr.Progress() in _send_execute causes progress overlay on chatbot regardless of show_progress; fix: never declare gr.Progress() in handlers with review_chatbot in outputs
+- `issues/ISSUE-23.md` — [bug] gr.Progress() in _send_execute causes progress overlay on chatbot; fix: never declare gr.Progress() in handlers with review_chatbot in outputs; use show_progress="minimal" on _send_execute for the loading indicator (3 instances, see file)
 - `issues/ISSUE-24.md` — [bug] review_context["original_prompt"] not updated on regenerate; manual prompt edits lost in review
 - `issues/ISSUE-25.md` — [feature] disable generate buttons during image generation; _generate_images_for_ui/_force_generate_images_for_ui converted to generators
 - `issues/ISSUE-26.md` — [feature] prompt-only review with no images; stream_start_review falls through to text-only API call when current_prompt set

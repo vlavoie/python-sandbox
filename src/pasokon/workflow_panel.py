@@ -945,10 +945,13 @@ class WorkflowPanel(ABC):
 
         # _send_execute is now a streaming generator that updates review_chatbot directly.
         # _gallery_state still buffers the failed gallery for the hidden flush step.
+        # show_progress="minimal" provides the loading indicator on the trigger component
+        # (Send button / input) for the full streaming duration. This is NOT gr.Progress() —
+        # it is safe to use even with review_chatbot in outputs (see ISSUE-23 Instance 3).
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_input, self.review_chatbot, self._gallery_state],
-            show_progress="hidden",
+            show_progress="minimal",
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,
