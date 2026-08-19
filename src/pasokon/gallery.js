@@ -107,6 +107,23 @@
         if (e.key === 'ArrowRight') show(idx + 1);
     });
 
+    // ── Force code-block wrapping (MarkdownCode CSS loads lazily, JS wins) ──
+    const fixPreWrap = (root) => {
+        (root === document ? document.querySelectorAll('.md pre') : root.querySelectorAll?.('.md pre') ?? [])
+            .forEach(el => {
+                el.style.setProperty('white-space', 'pre-wrap', 'important');
+                el.style.setProperty('word-break', 'break-word', 'important');
+                el.style.setProperty('overflow-wrap', 'break-word', 'important');
+                el.style.setProperty('overflow', 'auto', 'important');
+            });
+    };
+    fixPreWrap(document);
+    new MutationObserver(mutations => {
+        for (const m of mutations)
+            for (const node of m.addedNodes)
+                if (node.nodeType === 1) { fixPreWrap(node); if (node.matches?.('.md pre')) fixPreWrap(node.parentElement ?? document); }
+    }).observe(document.body, { childList: true, subtree: true });
+
     // ── Review input: Shift+Enter inserts newline, Enter submits ──────────
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
@@ -120,28 +137,6 @@
         textarea.value = textarea.value.slice(0, s) + '\n' + textarea.value.slice(end);
         textarea.selectionStart = textarea.selectionEnd = s + 1;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    }, true);
-
-    // ── Extract-prompt button → bridge textbox + trigger button → Python ──
-    document.addEventListener('click', (e) => {
-        const btn = e.target.closest('.psk-extract-btn');
-        if (!btn) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const prompt   = btn.dataset.prompt;
-        const panelId  = btn.dataset.panel;
-        const bridge   = document.querySelector(`#psk-bridge-${panelId} textarea`)
-                      || document.querySelector(`#psk-bridge-${panelId} input`);
-        const trigger  = document.querySelector(`#psk-trigger-${panelId} button`);
-        if (!bridge || !trigger) {
-            console.error('[pasokon] extract bridge not found for panel:', panelId);
-            return;
-        }
-        // Update bridge value so Gradio reads it when the trigger button fires.
-        bridge.value = prompt;
-        bridge.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        // Defer click so Gradio processes the input event first.
-        requestAnimationFrame(() => trigger.click());
     }, true);
 
     // ── Thumbnail click → lightbox ─────────────────────────────────────

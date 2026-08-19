@@ -61,17 +61,23 @@ After Instance 1 removed `gr.Progress()` from `_send_execute`, `show_progress="h
 - `show_progress="minimal"`: too subtle to notice during a 15–60s wait
 - 4px animated `gr.HTML` bar: rejected by user — identical to a previously-rejected approach in ISSUE-18
 
-### Fix (definitive)
+### Fix (definitive — 3 sub-attempts)
 
-`show_progress="full", show_progress_on=self.review_input` on `_send_execute`'s event kwargs.
+**Sub-attempt 1**: `show_progress="full"` on `_send_execute`. Flash and disappear. Root cause: without `show_progress_on`, the overlay fires on ALL outputs including `review_chatbot`.
 
-`show_progress_on` is a Gradio 5 parameter (discovered in `blocks.py` line 624) that restricts the loading overlay to specific components. Without it, `show_progress="full"` overlays ALL output components. With `show_progress_on=self.review_input`, only the input box gets the native spinner overlay — the chatbot is unaffected while streaming.
+**Sub-attempt 2**: `show_progress="full", show_progress_on=self.review_input` with `review_input` still in outputs. Flash and disappear. Root cause: `review_input` was in `outputs` and received `gr.update()` (no-op) on the very first yield (the ISSUE-28 immediate-emit fix). Gradio's frontend interprets receiving any value on a component as "this component has been served" and clears its loading overlay. The streaming bar CSS (`@keyframes countdown linear forwards`) confirms it's a one-shot animation — once the first yield lands, the overlay runs its exit animation and finishes.
 
-**Why this is safe:** `show_progress` (event kwarg) is completely separate from `gr.Progress()` (function parameter). The invariant banning `gr.Progress()` does not apply.
+**Sub-attempt 3 (working)**: `show_progress="full", show_progress_on=self.review_input` AND `review_input` removed from `_send_execute`'s outputs. This works because:
+- `review_input` never receives an update during streaming → its loading overlay never gets the "served" signal → persists until generator completes
+- `review_input` is still in `inputs` (so `_send_execute` can read the message)
+- `review_input` is still in `_send_start` and `_send_finish` outputs for lock/unlock
+- All yields in `_send_execute` reduced from 3-tuple to 2-tuple (removed the first `gr.update()`)
 
-**Key distinction to preserve:**
-- `show_progress="full", show_progress_on=self.review_input` on `_send_execute` → native overlay on input only ✓ CORRECT
-- `progress=gr.Progress()` in `_send_execute` → GENERATING bar overlays ALL visual outputs including chatbot ✗ BANNED
+**Key invariants:**
+- `show_progress_on` is a Gradio 5 parameter (`blocks.py:624`) that restricts the loading overlay to specific components
+- A component in `outputs` that receives any yield — even `gr.update()` — gets its loading state cleared on that yield
+- To sustain a loading overlay on a component for the full duration, that component must NOT be in the `outputs` of the streaming generator
+- `show_progress="full"` (event kwarg) vs `gr.Progress()` (function parameter) are completely separate mechanisms; only `gr.Progress()` is banned
 
 ### Note on gr.MultimodalTextbox
 

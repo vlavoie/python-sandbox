@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import gradio as gr
+from gradio.components.chatbot import ComponentMessage
 from PIL import Image
 
 from .gallery_widget import render_gallery_html
@@ -65,8 +66,6 @@ class WorkflowPanel(ABC):
         self._gen_prompt_btn = None
         self._gen_images_btn = None
         self._send_btn = None
-        self._prompt_bridge = None
-        self._extract_trigger = None
 
         self._failed_upload = None
         self._num_images_slider = None
@@ -665,9 +664,13 @@ class WorkflowPanel(ABC):
 
         return re.sub(r"```.*?```", _replace, content, flags=re.DOTALL)
 
-    def _on_bridge_input(self, prompt: str) -> Tuple[Any, Any]:
-        if prompt and prompt.strip():
-            return prompt.strip(), gr.update(selected=f"{self.panel_id}_gen_images")
+    def _on_message_select(self, evt: gr.SelectData) -> Tuple[Any, Any]:
+        content = evt.value if isinstance(evt.value, str) else ""
+        if "```" not in content:
+            return gr.update(), gr.update()
+        cleaned = GrokClient._clean_prompt_text(content)
+        if cleaned and cleaned != content.strip():
+            return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
         return gr.update(), gr.update()
 
     # ── persistence ───────────────────────────────────────────────────────
@@ -722,7 +725,18 @@ class WorkflowPanel(ABC):
         msgs: List[dict] = [{"role": "user", "content": text}]
         gallery_html = render_gallery_html(images)
         if gallery_html:
-            msgs.append({"role": "user", "content": gr.HTML(value=gallery_html)})
+            # ComponentMessage is returned as-is by _postprocess_content (first isinstance
+            # branch) — it is never mutated between yields, unlike gr.HTML whose
+            # constructor_args dict is modified in-place (value popped on first yield).
+            msgs.append({
+                "role": "user",
+                "content": ComponentMessage(
+                    component="html",
+                    value=gallery_html,
+                    constructor_args={},
+                    props={},
+                ),
+            })
         return msgs
 
     # ── UI render ─────────────────────────────────────────────────────────
@@ -756,18 +770,6 @@ class WorkflowPanel(ABC):
         self.failed_gallery = gr.HTML()
         self._gallery_state = gr.State(value="")
         self._chatbot_state = gr.State(value=[])
-        # Off-screen bridge: elem must stay in DOM so JS can find it.
-        # visible=False removes the element in Gradio 5; use CSS instead.
-        self._prompt_bridge = gr.Textbox(
-            interactive=True,
-            elem_id=f"psk-bridge-{self.panel_id}",
-            elem_classes=["psk-offscreen"],
-        )
-        self._extract_trigger = gr.Button(
-            "x",
-            elem_id=f"psk-trigger-{self.panel_id}",
-            elem_classes=["psk-offscreen"],
-        )
 
     def _get_extract_outputs(self) -> List:
         """Components updated by the Extract button. Override to redirect to a different target."""
@@ -880,9 +882,8 @@ class WorkflowPanel(ABC):
             show_progress="hidden",
         )
 
-        self._extract_trigger.click(
-            fn=self._on_bridge_input,
-            inputs=[self._prompt_bridge],
+        self.review_chatbot.select(
+            fn=self._on_message_select,
             outputs=self._get_extract_outputs(),
             show_progress="hidden",
         )
@@ -920,7 +921,9 @@ class WorkflowPanel(ABC):
 
             # Gradio clears generator outputs before the first yield.
             # Re-emit immediately with the image-enhanced user messages.
-            yield gr.update(), prior_ui_history + display_user_msgs, prior_gallery
+            # NOTE: review_input is NOT in outputs — it stays out so the show_progress_on
+            # loading overlay persists for the full duration (first yield would clear it).
+            yield prior_ui_history + display_user_msgs, prior_gallery
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -929,7 +932,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield gr.update(), prior_ui_history + display_user_msgs + [
+                    yield prior_ui_history + display_user_msgs + [
                         {"role": "assistant", "content": err},
                     ], prior_gallery
                     return
@@ -945,10 +948,10 @@ class WorkflowPanel(ABC):
                     # Replace the text-only user msg from stream_start_review with the
                     # display version that includes image thumbnails.
                     display_partial = display_user_msgs + partial_history[1:]
-                    yield gr.update(), display_partial, render_gallery_html(images) if images else prior_gallery
+                    yield display_partial, render_gallery_html(images) if images else prior_gallery
                 if not had_yield:
                     err = "❌ Could not start review. Re-generate images first."
-                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
+                    yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
                 elif self.review_history:
                     # Sync _ui_history: display user msgs + assistant reply with buttons.
                     tail = [
@@ -958,12 +961,14 @@ class WorkflowPanel(ABC):
                         for m in self.review_history[1:]
                     ]
                     self._ui_history = display_user_msgs + tail
+                    # Final yield: push the button-injected history to the chatbot.
+                    yield self._ui_history, prior_gallery
             else:
                 # Continue — stream chat completions token by token
                 client = self.app.client
                 if not client:
                     err = "❌ Client not initialized."
-                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
+                    yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
                     return
 
                 messages = self._build_continue_review_messages(msg)
@@ -974,7 +979,7 @@ class WorkflowPanel(ABC):
                 try:
                     for token in client.stream_chat_completions(messages):
                         partial += token
-                        yield gr.update(), prior_ui_history + display_user_msgs + [
+                        yield prior_ui_history + display_user_msgs + [
                             {"role": "assistant", "content": partial},
                         ], gallery_html
                 except Exception as e:
@@ -982,9 +987,9 @@ class WorkflowPanel(ABC):
 
                 if error:
                     err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
-                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err_content}], gallery_html
+                    yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err_content}], gallery_html
                 elif not partial:
-                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": "❌ No response received."}], gallery_html
+                    yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": "❌ No response received."}], gallery_html
                 else:
                     display_content = self._inject_extract_buttons(partial)
                     final_ui = prior_ui_history + display_user_msgs + [{"role": "assistant", "content": display_content}]
@@ -994,7 +999,7 @@ class WorkflowPanel(ABC):
                         {"role": "assistant", "content": partial},
                     ]
                     self.app.project_state.save_project_state()
-                    yield gr.update(), final_ui, gallery_html
+                    yield final_ui, gallery_html
 
         def _flush_gallery(gallery):
             return gallery
@@ -1003,12 +1008,14 @@ class WorkflowPanel(ABC):
             return gr.update(value="", interactive=True), gr.update(interactive=True), gr.update(value=None)
 
         # show_progress="full" + show_progress_on=review_input targets the native Gradio
-        # loading overlay to the input box only, leaving the chatbot unaffected while
-        # streaming. This is the event-kwarg mechanism — NOT gr.Progress() (the function
-        # parameter). See ISSUE-23 Instance 3.
+        # loading overlay to the input box only, leaving the chatbot unaffected.
+        # review_input is intentionally NOT in outputs: when a component is in outputs
+        # and receives its first yield (even gr.update()), Gradio clears its loading
+        # state. Keeping it out means the overlay persists for the full streaming
+        # duration and is only removed when the generator completes. See ISSUE-23.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
-            outputs=[self.review_input, self.review_chatbot, self._gallery_state],
+            outputs=[self.review_chatbot, self._gallery_state],
             show_progress="full",
             show_progress_on=self.review_input,
         )

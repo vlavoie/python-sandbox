@@ -16,18 +16,6 @@
     overflow: auto;
 }
 
-/* ── Off-screen bridge components (must stay in DOM — no visible=False) ── */
-/* pointer-events intentionally omitted: trigger button needs .click() from JS */
-.psk-offscreen {
-    position: absolute !important;
-    left: -9999px !important;
-    top: -9999px !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    visibility: hidden !important;
-}
-
 /* ── Extract-prompt button (injected after prompt code blocks) ─────────── */
 .psk-extract-btn {
     display: inline-flex;

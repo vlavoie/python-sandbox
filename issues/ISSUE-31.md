@@ -25,19 +25,21 @@ After any message is sent, the upload box (`_failed_upload`) is cleared automati
 
 This keeps the API free of redundant image data — only the `review_context` images are sent to the model.
 
-### `gr.HTML` component message for gallery bubbles
+### `ComponentMessage` for gallery bubbles
 
 `_build_display_user_msgs(text, images)` builds a list:
 1. `{"role": "user", "content": text}` — the user's text bubble
-2. `{"role": "user", "content": gr.HTML(value=render_gallery_html(images))}` — the gallery bubble (only if images exist)
+2. `{"role": "user", "content": ComponentMessage(component="html", value=gallery_html, constructor_args={}, props={})}` — the gallery bubble (only if images exist)
 
-Gradio's chatbot `_postprocess_content` handles `GradioComponent` instances by converting
-them to `ComponentMessage(component="html", value=html_content, ...)`. The frontend renders
-the embedded HTML component directly — no markdown processing, no DOMPurify, no file
-serving required.
+**Why not `gr.HTML`**: `_postprocess_content` mutates `gr.HTML.constructor_args` in-place
+(pops "value" on first yield). Since `display_user_msgs` is reused across all streaming
+yields, the gallery disappears after the first frame.
 
-This is the same rendering path used by `failed_gallery` and `output_gallery` (`gr.HTML`
-components), so the visual output and CSS classes are identical and proven to work.
+**Why `ComponentMessage`**: `_postprocess_content` returns `ComponentMessage` instances
+unchanged (first isinstance branch). The Pydantic model is immutable — safe across all
+yields. Same frontend rendering path: `component="html"` → HTML renderer.
+
+No markdown processing, no DOMPurify, no file serving required.
 
 ### Why three attempts were needed
 
@@ -58,11 +60,39 @@ Root cause of failure: unknown — the full Gradio file-serving pipeline has mul
 failure points (path permissions, cache errors, URL generation edge cases), and debugging
 without running the code is infeasible. Result: no thumbnails.
 
-**Attempt 3 — `gr.HTML` component message (WORKING)**
+**Attempt 3 — `gr.HTML` component message (FAILED — mutation bug)**
 Pass `gr.HTML(value=gallery_html)` as message content. Gradio's `_postprocess_content`
-dispatches `GradioComponent` instances directly to the component renderer, bypassing all
-markdown/DOMPurify/file-serving machinery. Same rendering path as `gr.HTML` components
-elsewhere in the app.
+dispatches `GradioComponent` instances to the component renderer, which is correct in
+principle. However, `_postprocess_content` MUTATES the `gr.HTML` object's `constructor_args`
+dict IN PLACE:
+
+```python
+chat_message.constructor_args["render"] = False   # adds key
+chat_message.constructor_args.pop("value", None)  # removes "value"!
+```
+
+The SAME `gr.HTML` instance is stored in `display_user_msgs` and reused across all yields
+in `_send_execute` (streaming is many yields). After the first yield, `constructor_args` has
+no `value` key. Every subsequent yield creates `gr.HTML(render=False)` with no content →
+`ComponentMessage(value=None)` → nothing renders. The gallery bubble flashes for one frame
+(if that) then disappears for the rest of the stream.
+
+Root cause: `display_user_msgs` is built once at the start of `_send_execute`, and the
+`gr.HTML` instance is reused across all streaming yields. The mutation on first yield
+corrupts the object for all later yields.
+
+**Attempt 4 — `ComponentMessage` directly (WORKING)**
+Pass a `ComponentMessage(component="html", value=gallery_html, constructor_args={}, props={})`
+as message content. `_postprocess_content` handles this via the FIRST isinstance branch:
+
+```python
+if isinstance(chat_message, (FileMessage, ComponentMessage, str)):
+    return chat_message  # returned unchanged — no mutation
+```
+
+`ComponentMessage` is a Pydantic model — immutable. Safe to reuse across all yields.
+Same frontend rendering path as the gr.HTML approach (component="html"), so the gallery
+renders correctly.
 
 ### Upload clear on send
 
@@ -75,5 +105,6 @@ elsewhere in the app.
 - `_ui_history` is session-only — do not serialize it.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
-- `gr.HTML` is a supported chatbot component type (documented in Gradio 5 as: "Image, Plot, Video, Gallery, Audio, HTML, and Model3D are supported").
+- Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.
+- `ComponentMessage` is a Pydantic model: `from gradio.components.chatbot import ComponentMessage`.
 - `sanitize_html=False` on the chatbot is still required for `_inject_extract_buttons` HTML buttons in assistant messages — do not remove it.
