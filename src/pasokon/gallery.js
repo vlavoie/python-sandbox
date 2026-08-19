@@ -147,6 +147,7 @@
         const msg = e.target.closest('.psk-review-chatbot .message');
         if (!msg) return;                            // not a chatbot message click
         if (e.target.closest('.psk-extract-btn')) return;  // button — let it through
+        if (e.target.closest('.psk-thumb')) return;        // thumbnail — let lightbox handle it
         e.stopImmediatePropagation();               // block everything else
     }, true);
 

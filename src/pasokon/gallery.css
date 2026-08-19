@@ -68,6 +68,9 @@
 .psk-review-chatbot .psk-extract-btn {
     cursor: pointer !important;
 }
+.psk-review-chatbot .psk-thumb {
+    cursor: zoom-in !important;
+}
 
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */
 .psk-gallery {
