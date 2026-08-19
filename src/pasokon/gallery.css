@@ -6,6 +6,14 @@
                  "Droid Sans Mono", "Courier New", monospace !important;
 }
 
+/* ── Wrap long code blocks (e.g. prompts in review chat) ─────────────── */
+.gradio-container pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    overflow-x: hidden;
+}
+
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */
 .psk-gallery {
     display: flex;
