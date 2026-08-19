@@ -757,7 +757,8 @@ class WorkflowPanel(ABC):
                             ),
                         },
                     )
-                    self._thumbnails_shown = True
+                    # _thumbnails_shown stays False so the first NEW message
+                    # sent this session also gets a gallery bubble.
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
         """User turn messages: one text bubble, then one HTML gallery bubble if images."""

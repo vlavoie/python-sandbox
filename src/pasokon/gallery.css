@@ -72,12 +72,14 @@
     opacity: 0.7;
 }
 
-/* Gradio adds cursor:pointer to the whole bubble when select() is wired.
-   Reset it to default so only the button looks interactive. */
-.psk-review-chatbot .message {
+/* Gradio sets cursor:pointer on the whole bubble when select() is wired.
+   Reset every element inside the chatbot to default, then restore pointer
+   only on the extract button. Scoped to .psk-review-chatbot so it doesn't
+   affect the review input / send button below. */
+.psk-review-chatbot * {
     cursor: default !important;
 }
-.psk-review-chatbot .message .psk-extract-btn {
+.psk-review-chatbot .psk-extract-btn {
     cursor: pointer !important;
 }
 

@@ -108,7 +108,7 @@ message of any session regardless of whether `review_history` was restored from 
 
 - `review_history` must stay text-only — never add component or file dicts to it.
 - `_ui_history` is session-only — do not serialize it.
-- `_thumbnails_shown` is session-only — reset to `False` in `__init__` AND `deserialize()`. Never serialize. Set to `True` in `deserialize()` when the gallery is re-injected into restored history, so the next new message doesn't produce a duplicate gallery bubble.
+- `_thumbnails_shown` is session-only — always `False` after `__init__` and `deserialize()`. Never serialize. The gallery injected into restored history during `deserialize` and the gallery attached to the first new message are independent: both correctly show the current `generated_images`.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
 - Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.

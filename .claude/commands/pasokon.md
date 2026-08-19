@@ -152,6 +152,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-30.md` — [bug] FPV and Element serialize() reimplemented base fields; cost_log never saved or loaded for those panels (FPV also missing super().deserialize())
 - `issues/ISSUE-31.md` — [feature] image thumbnails in review chat user messages; separate _ui_history (display) from review_history (API); upload box cleared after send
 - `issues/ISSUE-32.md` — [feature] "↗ Use this prompt" button injected after prompt code blocks; JS bridge (hidden textbox) → _on_bridge_input; removed Extract button
+- `issues/ISSUE-33.md` — [bug] prompt code blocks in review chat render as single line; fix: _inject_extract_buttons converts ``` blocks to inline-styled <pre> — static CSS and JS observers can't reliably beat Gradio's lazily-loaded MarkdownCode component CSS
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
