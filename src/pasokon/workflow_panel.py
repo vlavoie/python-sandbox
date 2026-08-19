@@ -555,15 +555,13 @@ class WorkflowPanel(ABC):
             return
 
         ps = self.app.project_state
-        images_to_review = []
+        images_to_review = list(self.generated_images or [])
         if uploaded_files:
             for f in uploaded_files:
                 if f is not None:
                     p = ps.save_uploaded_file(f)
                     if p:
                         images_to_review.append(p)
-        elif self.generated_images:
-            images_to_review = list(self.generated_images)
 
         user_display = user_comment.strip() or "Review these"
 
@@ -942,9 +940,9 @@ class WorkflowPanel(ABC):
             prior_gallery = render_gallery_html(self.generated_images or [])
 
             # Thumbnails appear below every user message.
-            # Uploaded files take priority; fall back to generated images.
+            # Generated images come first; uploaded files are appended to the bundle.
             uploaded_clean = [f for f in (uploaded or []) if f is not None]
-            display_images = uploaded_clean or list(self.generated_images or [])
+            display_images = list(self.generated_images or []) + uploaded_clean
 
             # Build display messages: one text bubble + one image bubble per image.
             display_user_msgs = self._build_display_user_msgs(msg, display_images)

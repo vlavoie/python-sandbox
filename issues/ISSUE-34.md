@@ -14,8 +14,16 @@ The buffer is populated on generation (via `_gen_outputs` which includes `failed
 
 Error paths preserve the buffer value (keep existing gallery HTML) so the user can retry without losing context.
 
+## Bundling generated + uploaded images
+
+`display_images` in `_send_execute` and `images_to_review` in `stream_start_review` previously used OR logic (uploaded files replaced generated images). Both now use AND: generated images first, then any uploaded files appended. This means:
+- Chat thumbnails show all images in the bundle.
+- `review_context["failed_images"]` sent to the API contains the full bundle.
+- `review_galleries` records the full bundle per turn.
+
 ## Key invariants
 
 - Only the final SUCCESS yields in `_send_execute` emit `""` for `_gallery_state`; intermediate streaming yields and error paths are unchanged.
 - `output_gallery` (Generate Images tab) is never touched by the send/clear flow.
 - `_failed_upload` is cleared in `_send_finish` (pre-existing behaviour, unchanged).
+- Generated images always come before uploaded files in the bundle order.
