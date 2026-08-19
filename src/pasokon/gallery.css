@@ -14,6 +14,15 @@
     overflow-x: hidden;
 }
 
+/* ── Review chatbot: assistant messages are clickable (extract prompt) ── */
+.psk-review-chatbot .message.bot {
+    cursor: pointer;
+    transition: opacity 0.12s;
+}
+.psk-review-chatbot .message.bot:hover {
+    opacity: 0.75;
+}
+
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */
 .psk-gallery {
     display: flex;

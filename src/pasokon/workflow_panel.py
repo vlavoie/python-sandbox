@@ -63,7 +63,7 @@ class WorkflowPanel(ABC):
         self._gen_prompt_btn = None
         self._gen_images_btn = None
         self._send_btn = None
-        self._extract_btn = None
+
         self._failed_upload = None
         self._num_images_slider = None
         self._aspect_ratio_dropdown = None
@@ -641,13 +641,12 @@ class WorkflowPanel(ABC):
             self.review_history = [user_msg, {"role": "assistant", "content": partial}]
             ps.save_project_state()
 
-    def extract_prompt(self) -> Tuple[str, Any]:
-        for msg in reversed(self.review_history):
-            if msg["role"] == "assistant" and msg["content"]:
-                cleaned = GrokClient._clean_prompt_text(msg["content"])
-                if cleaned:
-                    return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
-        return "", gr.update()
+    def _on_message_select(self, evt: gr.SelectData) -> Tuple[Any, Any]:
+        content = evt.value if isinstance(evt.value, str) else ""
+        cleaned = GrokClient._clean_prompt_text(content)
+        if cleaned:
+            return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
+        return gr.update(), gr.update()
 
     # ── persistence ───────────────────────────────────────────────────────
 
@@ -713,6 +712,7 @@ class WorkflowPanel(ABC):
             bubble_full_width=False,
             type="messages",
             sanitize_html=False,
+            elem_classes=["psk-review-chatbot"],
         )
         with gr.Row(equal_height=True):
             self.review_input = gr.Textbox(
@@ -727,11 +727,6 @@ class WorkflowPanel(ABC):
         self.failed_gallery = gr.HTML()
         self._gallery_state = gr.State(value="")
         self._chatbot_state = gr.State(value=[])
-        gr.Markdown("---")
-        gr.Markdown("**When satisfied with the conversation:**")
-        self._extract_btn = gr.Button(
-            "📤 Extract Final Prompt & Send to Generation Tab", variant="primary"
-        )
 
     def _get_extract_outputs(self) -> List:
         """Components updated by the Extract button. Override to redirect to a different target."""
@@ -844,9 +839,8 @@ class WorkflowPanel(ABC):
             show_progress="hidden",
         )
 
-        self._extract_btn.click(
-            fn=self.extract_prompt,
-            inputs=[],
+        self.review_chatbot.select(
+            fn=self._on_message_select,
             outputs=self._get_extract_outputs(),
             show_progress="hidden",
         )
