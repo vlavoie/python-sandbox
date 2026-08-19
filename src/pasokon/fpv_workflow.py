@@ -321,10 +321,10 @@ Context:
         ref = self.reference_image_path if self.reference_image_path else None
         gz = self.greenzone_image_path if self.greenzone_image_path else None
         additional = self.additional_images_paths or []
-        review_images = self.generated_images or []
+        review_buffer = "" if self.review_history else render_gallery_html(self.generated_images or [])
         return [
             gr.update(value=self.current_prompt),
-            gr.update(value=render_gallery_html(review_images)),
+            gr.update(value=review_buffer),
             gr.update(value=ref),
             gr.update(value=scene_to_show),
             gr.update(value=additional),

@@ -212,10 +212,10 @@ class WorkflowPanel(ABC):
     def get_ui_restore_values(self) -> List:
         """gr.update() values matching get_ui_outputs() — override in subclass."""
         is_aurora = self.image_model == "grok-imagine-image-2.0"
-        review_images = self.generated_images or []
+        review_buffer = "" if self.review_history else render_gallery_html(self.generated_images or [])
         return [
             gr.update(value=self.current_prompt),
-            gr.update(value=render_gallery_html(review_images)),
+            gr.update(value=review_buffer),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self._ui_history),
             gr.update(value=self.image_model),
