@@ -55,9 +55,30 @@ unchanged, which would be a false positive.
 - `_get_extract_outputs()` override contract is unchanged.
 - `review_history` (the API history) is never modified — buttons only in `_ui_history`.
 
+## Attempt 2 — regression fix (button broken + code blocks look clickable)
+
+### Root cause
+
+`_inject_extract_buttons` was changed to replace ` ``` ` fences with `<pre>` tags, so
+`_ui_history` messages no longer contain backticks. `_on_message_select` guarded on
+`"```" not in content` — which was now always true — so every select event returned
+no-op, including button clicks.
+
+### Fixes
+
+1. **`_on_message_select`**: changed guard from `"```"` check to `"psk-extract-btn"` check;
+   reads the prompt from the `data-prompt` HTML attribute via `re.search` + `html.unescape`
+   instead of `_clean_prompt_text`. The attribute is already `html.escape(quote=True)` encoded.
+
+2. **`gallery.css`**: added cursor overrides — Gradio sets `cursor:pointer` on the whole
+   message bubble when `select()` is wired; override it to `default` for `.psk-review-chatbot
+   .message` and restore `pointer` only on `.psk-extract-btn`.
+
 ## Key invariants
 
-- `data-prompt` attr is `html.escape(..., quote=True)` — included in the button but
-  not used by the extraction logic (the select event uses `evt.value` instead).
+- `data-prompt` attr uses `html.escape(..., quote=True)` — extraction reads it directly
+  via `data-prompt="([^"]*)"` regex + `html.unescape`. Do not use `_clean_prompt_text` here.
+- `_on_message_select` must guard on `"psk-extract-btn"`, NOT `"```"` — code fences are
+  replaced by `<pre>` tags in `_ui_history` and are absent from `evt.value`.
 - The final yield after `stream_start_review` is critical: without it the chatbot
   stays on the streaming version (no buttons) until the next message is sent.

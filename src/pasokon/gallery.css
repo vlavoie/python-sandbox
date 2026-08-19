@@ -16,20 +16,41 @@
     overflow: auto;
 }
 
-/* ── Generating overlay: make it immediately visible ──────────────────── */
-/* Gradio's default .generating style fades in over 1s (pulseStart: 0→1   */
-/* opacity). The first yield (ISSUE-28) transitions status from "pending"  */
-/* (solid spinner) to "generating" instantly, so the solid overlay flashes */
-/* away and the border is invisible for ~1s. This override starts the      */
-/* overlay at full opacity so it's visible for the full streaming duration. */
+/* ── Generating overlay: immediately visible with elapsed-seconds timer ── */
+/* Gradio's .generating style fades in over 1s (pulseStart: 0→1 opacity). */
+/* ISSUE-28's immediate first yield switches "pending" → "generating"      */
+/* instantly, so the solid overlay flashes away and the fading border is   */
+/* invisible for ~1s. This override: solid background + instant pulse +    */
+/* CSS-driven elapsed timer via @property integer animation.               */
+/*                                                                          */
+/* Browser support: @property requires Chrome 85+, Firefox 128+,           */
+/* Safari 16.4+. Older browsers see "0s" (non-animating counter). The      */
+/* overlay itself (background + pulse) works in all browsers.              */
+@property --pasokon-timer {
+    syntax: '<integer>';
+    initial-value: 0;
+    inherits: false;
+}
 .gradio-container .wrap.generating {
     background: var(--block-background-fill) !important;
-    animation: pasokon-generating 1.3s ease-in-out infinite !important;
-    opacity: 0.88;
+    --pasokon-timer: 0;
+    counter-reset: pasokon-elapsed var(--pasokon-timer);
+    animation: pasokon-generating 1.3s ease-in-out infinite,
+               pasokon-count 300s steps(300, end) forwards !important;
 }
 @keyframes pasokon-generating {
     0%, 100% { opacity: 0.88; }
     50%       { opacity: 0.52; }
+}
+@keyframes pasokon-count {
+    to { --pasokon-timer: 300; }
+}
+.gradio-container .wrap.generating::after {
+    content: counter(pasokon-elapsed) "s";
+    font-size: 0.75rem;
+    color: var(--body-text-color-subdued, rgba(127, 127, 127, 0.85));
+    font-family: var(--font-mono, monospace);
+    font-weight: 500;
 }
 
 /* ── Extract-prompt button (injected after prompt code blocks) ─────────── */
@@ -49,6 +70,15 @@
 }
 .psk-extract-btn:hover {
     opacity: 0.7;
+}
+
+/* Gradio adds cursor:pointer to the whole bubble when select() is wired.
+   Reset it to default so only the button looks interactive. */
+.psk-review-chatbot .message {
+    cursor: default !important;
+}
+.psk-review-chatbot .message .psk-extract-btn {
+    cursor: pointer !important;
 }
 
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */

@@ -678,11 +678,14 @@ class WorkflowPanel(ABC):
 
     def _on_message_select(self, evt: gr.SelectData) -> Tuple[Any, Any]:
         content = evt.value if isinstance(evt.value, str) else ""
-        if "```" not in content:
+        if "psk-extract-btn" not in content:
             return gr.update(), gr.update()
-        cleaned = GrokClient._clean_prompt_text(content)
-        if cleaned and cleaned != content.strip():
-            return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
+        m = re.search(r'data-prompt="([^"]*)"', content)
+        if not m:
+            return gr.update(), gr.update()
+        prompt = _html.unescape(m.group(1))
+        if prompt:
+            return prompt, gr.update(selected=f"{self.panel_id}_gen_images")
         return gr.update(), gr.update()
 
     # ── persistence ───────────────────────────────────────────────────────
@@ -723,8 +726,7 @@ class WorkflowPanel(ABC):
         # context from self.generated_images (permanent paths, always current).
         self.review_context = {}
         # _ui_history is display-only; initialize with extract buttons injected
-        # into assistant messages. Image thumbnails are re-added only as new
-        # messages are sent this session.
+        # into assistant messages.
         self._ui_history = [
             {**m, "content": self._inject_extract_buttons(m["content"])}
             if m.get("role") == "assistant" and m.get("content")
@@ -732,6 +734,30 @@ class WorkflowPanel(ABC):
             for m in self.review_history
         ]
         self._thumbnails_shown = False
+        # Re-inject the thumbnail gallery after the first user message so the
+        # chat history shows the images that were under review. generated_images
+        # is already restored above, so the paths are available.
+        if self._ui_history and self.generated_images:
+            gallery_html = render_gallery_html(self.generated_images)
+            if gallery_html:
+                first_user_idx = next(
+                    (i for i, m in enumerate(self._ui_history) if m.get("role") == "user"),
+                    None,
+                )
+                if first_user_idx is not None:
+                    self._ui_history.insert(
+                        first_user_idx + 1,
+                        {
+                            "role": "user",
+                            "content": ComponentMessage(
+                                component="html",
+                                value=gallery_html,
+                                constructor_args={},
+                                props={},
+                            ),
+                        },
+                    )
+                    self._thumbnails_shown = True
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
         """User turn messages: one text bubble, then one HTML gallery bubble if images."""
