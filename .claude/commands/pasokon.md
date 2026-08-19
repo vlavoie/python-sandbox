@@ -60,7 +60,7 @@ Current functions that declare `gr.Progress()`: `generate_images_batch`, `_do_fo
 - `_send_execute` yields a `{"role": "assistant", "content": "..."}` placeholder immediately before each API call (both start_review and continue paths) to show a thinking indicator in the chatbot during the API wait.
 - Generate buttons use `show_progress="minimal"` + `gr.Progress()` (no chatbot in their outputs — safe).
 - All other event handlers use `show_progress="hidden"`.
-- See ISSUE-23 for full history (8+ attempts, 3 confirmed instances).
+- See ISSUE-23 for full history (8+ attempts, 4 confirmed instances).
 
 ### review_context is session-only
 `review_context` is NEVER restored from disk. `deserialize()` always sets it to `{}`.
