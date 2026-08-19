@@ -122,6 +122,20 @@
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }, true);
 
+    // ── Extract-prompt button → bridge textbox → Gradio handler ──────────
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.psk-extract-btn');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const prompt = btn.dataset.prompt;
+        const panelId = btn.dataset.panel;
+        const bridge = document.querySelector(`#psk-bridge-${panelId} textarea`);
+        if (!bridge) return;
+        bridge.value = prompt;
+        bridge.dispatchEvent(new Event('input', { bubbles: true }));
+    }, true);
+
     // ── Thumbnail click → lightbox ─────────────────────────────────────
     document.addEventListener('click', (e) => {
         if (!e.target.matches('.psk-thumb')) return;

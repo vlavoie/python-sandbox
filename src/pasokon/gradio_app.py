@@ -294,7 +294,7 @@ def launch():
         if chat_models and image_models:
             print(f"✅ Loaded {len(chat_models)} chat models and {len(image_models)} image models")
 
-    interface.launch(share=False)
+    interface.launch(share=False, allowed_paths=[str(app.project_state.output_dir)])
 
 
 if __name__ == "__main__":

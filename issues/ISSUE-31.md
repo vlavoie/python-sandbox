@@ -20,22 +20,29 @@ After any message is sent, the upload box (`_failed_upload`) is cleared automati
 
 ### Separate `_ui_history` vs `review_history`
 
-- `review_history` (List) — text-only, used for API calls. Never contains HTML or base64 data. Serialised to disk and restored on project load.
-- `_ui_history` (List) — display-only, used for the chatbot widget. User messages may contain the gallery HTML. Never serialised; reset to a text-only copy of `review_history` on project load via `deserialize()`.
+- `review_history` (List) — text-only, used for API calls. Serialised to disk and restored on project load.
+- `_ui_history` (List) — display-only, used for the chatbot widget. User turns may include extra image-bubble entries. Never serialised; reset (with `_inject_extract_buttons`) on project load via `deserialize()`.
 
-This separation ensures the API never receives large base64 payloads for historical messages — only the images in the current `review_context` are sent (existing behaviour unchanged).
+This keeps the API free of redundant image data — only the `review_context` images are sent to the model.
 
-### `sanitize_html=False` on `gr.Chatbot`
+### Native Gradio file format for image bubbles
 
-Required so Gradio 5 does not strip `<img src="data:...">` tags from message content. The app is local-only, so this is safe.
+Each image is added as a **separate user message**: `{"role": "user", "content": {"path": img_path}}`. Gradio renders this natively as an image bubble via its `/file=` route — no base64, no HTML injection, no `sanitize_html` complications.
+
+`_build_display_user_msgs(text, images)` returns a list: `[text_msg, img_msg_1, ..., img_msg_N]`. All callers in `_send_execute` concatenate this list: `prior_ui_history + display_user_msgs + [assistant_msg]`.
+
+### `allowed_paths` in launch
+
+`allowed_paths=[str(app.project_state.output_dir)]` added to `interface.launch()` so Gradio can serve images from `fpv-pov-outputs/` via `/file=` routes.
 
 ### Upload clear on send
 
-`_send_finish` now returns `gr.update(value=None)` for `_failed_upload` as a third value. `_finish_event_kwargs` includes `_failed_upload` in its outputs list.
+`_send_finish` returns `gr.update(value=None)` for `_failed_upload` as a third value. `_finish_event_kwargs` outputs: `[review_input, _send_btn, _failed_upload]`.
 
 ## Invariants to preserve
 
-- `review_history` must always be text-only — never add image data to it.
-- `_ui_history` is session-only — do not serialize it; `deserialize()` resets it.
-- `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the return tuple.
-- `sanitize_html=False` is intentional — do not revert without re-evaluating thumbnail rendering.
+- `review_history` must stay text-only — never add file dicts to it.
+- `_ui_history` is session-only — do not serialize it.
+- `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
+- `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
+- `allowed_paths` in `launch()` is required for image serving — do not remove it.

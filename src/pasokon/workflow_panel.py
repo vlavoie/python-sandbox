@@ -1,7 +1,9 @@
 """WorkflowPanel: reusable Generate Prompt → Generate Images → Review component."""
 
+import html as _html
 import httpx
 import io
+import re
 import shutil
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -63,6 +65,7 @@ class WorkflowPanel(ABC):
         self._gen_prompt_btn = None
         self._gen_images_btn = None
         self._send_btn = None
+        self._prompt_bridge = None
 
         self._failed_upload = None
         self._num_images_slider = None
@@ -641,11 +644,29 @@ class WorkflowPanel(ABC):
             self.review_history = [user_msg, {"role": "assistant", "content": partial}]
             ps.save_project_state()
 
-    def _on_message_select(self, evt: gr.SelectData) -> Tuple[Any, Any]:
-        content = evt.value if isinstance(evt.value, str) else ""
-        cleaned = GrokClient._clean_prompt_text(content)
-        if cleaned:
-            return cleaned, gr.update(selected=f"{self.panel_id}_gen_images")
+    def _inject_extract_buttons(self, content: str) -> str:
+        """Append a clickable extract button after each prompt code block."""
+        if "```" not in content:
+            return content
+
+        def _replace(m: re.Match) -> str:
+            raw = m.group(0)
+            cleaned = GrokClient._clean_prompt_text(raw)
+            if not cleaned:
+                return raw
+            escaped = _html.escape(cleaned, quote=True)
+            panel = self.panel_id
+            return (
+                raw
+                + f'\n<button class="psk-extract-btn" data-panel="{panel}"'
+                + f' data-prompt="{escaped}">↗ Use this prompt</button>'
+            )
+
+        return re.sub(r"```.*?```", _replace, content, flags=re.DOTALL)
+
+    def _on_bridge_input(self, prompt: str) -> Tuple[Any, Any]:
+        if prompt and prompt.strip():
+            return prompt.strip(), gr.update(selected=f"{self.panel_id}_gen_images")
         return gr.update(), gr.update()
 
     # ── persistence ───────────────────────────────────────────────────────
@@ -685,15 +706,23 @@ class WorkflowPanel(ABC):
         # The first send_message call will invoke start_review, which rebuilds
         # context from self.generated_images (permanent paths, always current).
         self.review_context = {}
-        # _ui_history is display-only; initialize as text-only copy of review_history.
-        # Image thumbnails are re-added only as new messages are sent this session.
-        self._ui_history = list(self.review_history)
+        # _ui_history is display-only; initialize with extract buttons injected
+        # into assistant messages. Image thumbnails are re-added only as new
+        # messages are sent this session.
+        self._ui_history = [
+            {**m, "content": self._inject_extract_buttons(m["content"])}
+            if m.get("role") == "assistant" and m.get("content")
+            else m
+            for m in self.review_history
+        ]
 
-    def _build_display_user_msg(self, text: str, images: List[str]) -> dict:
-        """User message dict with gallery thumbnails embedded after the text."""
-        gallery_html = render_gallery_html(images)
-        content = (text + "\n\n" + gallery_html) if gallery_html else text
-        return {"role": "user", "content": content}
+    def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
+        """User turn messages: one text bubble, then one image bubble per image."""
+        msgs: List[dict] = [{"role": "user", "content": text}]
+        for img_path in images:
+            if Path(img_path).exists():
+                msgs.append({"role": "user", "content": {"path": img_path}})
+        return msgs
 
     # ── UI render ─────────────────────────────────────────────────────────
 
@@ -712,7 +741,6 @@ class WorkflowPanel(ABC):
             bubble_full_width=False,
             type="messages",
             sanitize_html=False,
-            elem_classes=["psk-review-chatbot"],
         )
         with gr.Row(equal_height=True):
             self.review_input = gr.Textbox(
@@ -727,6 +755,7 @@ class WorkflowPanel(ABC):
         self.failed_gallery = gr.HTML()
         self._gallery_state = gr.State(value="")
         self._chatbot_state = gr.State(value=[])
+        self._prompt_bridge = gr.Textbox(visible=False, elem_id=f"psk-bridge-{self.panel_id}")
 
     def _get_extract_outputs(self) -> List:
         """Components updated by the Extract button. Override to redirect to a different target."""
@@ -839,8 +868,9 @@ class WorkflowPanel(ABC):
             show_progress="hidden",
         )
 
-        self.review_chatbot.select(
-            fn=self._on_message_select,
+        self._prompt_bridge.input(
+            fn=self._on_bridge_input,
+            inputs=[self._prompt_bridge],
             outputs=self._get_extract_outputs(),
             show_progress="hidden",
         )
@@ -853,8 +883,6 @@ class WorkflowPanel(ABC):
         def _send_start(msg):
             prior_history = list(self._ui_history)
             prior_gallery = render_gallery_html(self.generated_images or [])
-            # Show the user message immediately; Gradio's native typing indicator
-            # signals "assistant is thinking" while the streaming generator runs.
             pending = prior_history + [{"role": "user", "content": msg}]
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
@@ -875,11 +903,12 @@ class WorkflowPanel(ABC):
             else:
                 display_images = []
 
-            display_user_msg = self._build_display_user_msg(msg, display_images)
+            # Build display messages: one text bubble + one image bubble per image.
+            display_user_msgs = self._build_display_user_msgs(msg, display_images)
 
             # Gradio clears generator outputs before the first yield.
-            # Re-emit immediately with the image-enhanced user message.
-            yield gr.update(), prior_ui_history + [display_user_msg], prior_gallery
+            # Re-emit immediately with the image-enhanced user messages.
+            yield gr.update(), prior_ui_history + display_user_msgs, prior_gallery
 
             # After a session restart, review_context is cleared but review_history
             # is restored from disk. Rebuild context silently so we can continue
@@ -888,8 +917,7 @@ class WorkflowPanel(ABC):
                 images = list(self.generated_images or [])
                 if not images:
                     err = "❌ No images available — regenerate images to continue review."
-                    yield gr.update(), prior_ui_history + [
-                        display_user_msg,
+                    yield gr.update(), prior_ui_history + display_user_msgs + [
                         {"role": "assistant", "content": err},
                     ], prior_gallery
                     return
@@ -904,21 +932,26 @@ class WorkflowPanel(ABC):
                     had_yield = True
                     # Replace the text-only user msg from stream_start_review with the
                     # display version that includes image thumbnails.
-                    display_partial = [display_user_msg] + partial_history[1:]
+                    display_partial = display_user_msgs + partial_history[1:]
                     yield gr.update(), display_partial, render_gallery_html(images) if images else prior_gallery
                 if not had_yield:
                     err = "❌ Could not start review. Re-generate images first."
-                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err}], prior_gallery
+                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
                 elif self.review_history:
-                    # Sync _ui_history: keep the display user message but use
-                    # the assistant reply that stream_start_review saved.
-                    self._ui_history = [display_user_msg] + list(self.review_history[1:])
+                    # Sync _ui_history: display user msgs + assistant reply with buttons.
+                    tail = [
+                        {**m, "content": self._inject_extract_buttons(m["content"])}
+                        if m.get("role") == "assistant" and m.get("content")
+                        else m
+                        for m in self.review_history[1:]
+                    ]
+                    self._ui_history = display_user_msgs + tail
             else:
                 # Continue — stream chat completions token by token
                 client = self.app.client
                 if not client:
                     err = "❌ Client not initialized."
-                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err}], prior_gallery
+                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err}], prior_gallery
                     return
 
                 messages = self._build_continue_review_messages(msg)
@@ -929,8 +962,7 @@ class WorkflowPanel(ABC):
                 try:
                     for token in client.stream_chat_completions(messages):
                         partial += token
-                        yield gr.update(), prior_ui_history + [
-                            display_user_msg,
+                        yield gr.update(), prior_ui_history + display_user_msgs + [
                             {"role": "assistant", "content": partial},
                         ], gallery_html
                 except Exception as e:
@@ -938,11 +970,12 @@ class WorkflowPanel(ABC):
 
                 if error:
                     err_content = (partial + f"\n\n❌ Error: {error}") if partial else f"❌ Error: {error}"
-                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": err_content}], gallery_html
+                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": err_content}], gallery_html
                 elif not partial:
-                    yield gr.update(), prior_ui_history + [display_user_msg, {"role": "assistant", "content": "❌ No response received."}], gallery_html
+                    yield gr.update(), prior_ui_history + display_user_msgs + [{"role": "assistant", "content": "❌ No response received."}], gallery_html
                 else:
-                    final_ui = prior_ui_history + [display_user_msg, {"role": "assistant", "content": partial}]
+                    display_content = self._inject_extract_buttons(partial)
+                    final_ui = prior_ui_history + display_user_msgs + [{"role": "assistant", "content": display_content}]
                     self._ui_history = final_ui
                     self.review_history = prior_api_history + [
                         {"role": "user", "content": msg},
@@ -957,15 +990,14 @@ class WorkflowPanel(ABC):
         def _send_finish():
             return gr.update(value="", interactive=True), gr.update(interactive=True), gr.update(value=None)
 
-        # _send_execute is now a streaming generator that updates review_chatbot directly.
-        # _gallery_state still buffers the failed gallery for the hidden flush step.
-        # show_progress="minimal" provides the loading indicator on the trigger component
-        # (Send button / input) for the full streaming duration. This is NOT gr.Progress() —
-        # it is safe to use even with review_chatbot in outputs (see ISSUE-23 Instance 3).
+        # show_progress="full" on _send_execute gives the native Gradio loading overlay
+        # on review_input for the entire streaming duration. This is the event-kwarg
+        # mechanism — NOT gr.Progress() (the function parameter). The invariant banning
+        # gr.Progress() does not apply here. See ISSUE-23 Instance 3.
         _send_event_kwargs = dict(
             inputs=[self.review_input, self._failed_upload],
             outputs=[self.review_input, self.review_chatbot, self._gallery_state],
-            show_progress="minimal",
+            show_progress="full",
         )
         _flush_event_kwargs = dict(
             fn=_flush_gallery,

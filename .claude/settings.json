@@ -5,7 +5,11 @@
       "Bash(.venv/bin/python -c \"from src.pasokon.gradio_app import FPVPOVApp; print\\('OK'\\)\")",
       "Bash(python3 -m py_compile src/pasokon/gradio_app.py src/pasokon/review_handler.py src/pasokon/project_state.py)",
       "Bash(python3 -m py_compile /Users/vincentlavoie/unrelated/pasokon/src/pasokon/gradio_app.py)",
-      "Bash(python3 -m py_compile /Users/vincentlavoie/unrelated/pasokon/src/pasokon/gradio_app.py /Users/vincentlavoie/unrelated/pasokon/src/pasokon/gallery_widget.py)"
+      "Bash(python3 -m py_compile /Users/vincentlavoie/unrelated/pasokon/src/pasokon/gradio_app.py /Users/vincentlavoie/unrelated/pasokon/src/pasokon/gallery_widget.py)",
+      "Bash(find /Users/vincentlavoie/Library/Caches/pypoetry/virtualenvs/pasokon-Hvkd8Nqz-py3.14/lib/python3.14/site-packages/gradio -name \"*.css\" | head -5)",
+      "Read(//Users/vincentlavoie/Library/Caches/pypoetry/virtualenvs/pasokon-Hvkd8Nqz-py3.14/lib/python3.14/site-packages/gradio/**)",
+      "Bash(python3 -c \"from gradio.data_classes import Message; import inspect; print\\(Message.__annotations__\\)\")",
+      "Read(//Users/vincentlavoie/Library/Caches/pypoetry/virtualenvs/pasokon-Hvkd8Nqz-py3.14/**)"
     ]
   }
 }

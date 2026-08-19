@@ -7,20 +7,31 @@
 }
 
 /* ── Wrap long code blocks (e.g. prompts in review chat) ─────────────── */
-.gradio-container pre {
+/* Gradio's MarkdownCode CSS uses .md pre with specificity 0-2-1; match it */
+.gradio-container .md pre {
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: break-word;
-    overflow-x: hidden;
+    overflow: visible;
 }
 
-/* ── Review chatbot: assistant messages are clickable (extract prompt) ── */
-.psk-review-chatbot .message.bot {
+/* ── Extract-prompt button (injected after prompt code blocks) ─────────── */
+.psk-extract-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color-primary, #555);
+    background: var(--button-secondary-background-fill, transparent);
+    color: var(--button-secondary-text-color, inherit);
     cursor: pointer;
     transition: opacity 0.12s;
 }
-.psk-review-chatbot .message.bot:hover {
-    opacity: 0.75;
+.psk-extract-btn:hover {
+    opacity: 0.7;
 }
 
 /* ── Thumbnail strip ──────────────────────────────────────────────────── */
