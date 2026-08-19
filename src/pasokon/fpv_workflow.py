@@ -328,7 +328,7 @@ Context:
             gr.update(value=ref),
             gr.update(value=scene_to_show),
             gr.update(value=additional),
-            gr.update(value=self.review_history),
+            gr.update(value=self._ui_history),
             gr.update(value=gz),
             gr.update(value=render_gallery_html(self.generated_images or [])),
             gr.update(value=self.image_model),

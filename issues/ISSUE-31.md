@@ -5,8 +5,9 @@
 When a message is sent in the Review & Correct chat, the user's message bubble now
 shows thumbnails of the images involved:
 
-- **First message** (fresh review start): thumbnails of all generated images (or uploaded
-  images if the upload box is used) appear below the message text.
+- **First message of the session**: thumbnails of all generated images (or uploaded
+  images if the upload box is used) appear below the message text. This fires once per
+  project load, regardless of whether `review_history` was restored from disk.
 - **Continuation messages with uploaded files**: thumbnails of the newly uploaded images
   appear below the message text.
 - **Continuation messages without uploads**: no thumbnail strip (plain text only).
@@ -81,18 +82,22 @@ Root cause: `display_user_msgs` is built once at the start of `_send_execute`, a
 `gr.HTML` instance is reused across all streaming yields. The mutation on first yield
 corrupts the object for all later yields.
 
-**Attempt 4 — `ComponentMessage` directly (WORKING)**
-Pass a `ComponentMessage(component="html", value=gallery_html, constructor_args={}, props={})`
-as message content. `_postprocess_content` handles this via the FIRST isinstance branch:
+**Attempt 4 — `ComponentMessage` directly + wrong data condition (STILL FAILED)**
+Switched from `gr.HTML` to `ComponentMessage` (fixing the mutation bug). Confirmed via
+Gradio frontend JS that `pa` component instantiation sets `type: t[15].content.component`
+and `value: t[15].content.value`, so `ComponentMessage(component="html")` correctly maps
+to the HTML renderer (case 6 in `ba`'s switch). The rendering pipeline is correct.
 
-```python
-if isinstance(chat_message, (FileMessage, ComponentMessage, str)):
-    return chat_message  # returned unchanged — no mutation
-```
+Root cause of CONTINUED failure: `display_images` was empty in all test cases because
+`elif not self.review_history:` is `False` whenever a project with history is loaded.
+The gallery bubble was never created — all four approaches failed with identical symptom
+(no thumbnails) because the data condition was wrong, not the rendering.
 
-`ComponentMessage` is a Pydantic model — immutable. Safe to reuse across all yields.
-Same frontend rendering path as the gr.HTML approach (component="html"), so the gallery
-renders correctly.
+**Attempt 5 — `ComponentMessage` + session flag (WORKING)**
+Replaced `elif not self.review_history:` with `elif not self._thumbnails_shown:`.
+`_thumbnails_shown` is `False` in `__init__` and reset to `False` in `deserialize()`.
+Set to `True` when `display_images` is non-empty. This shows thumbnails on the first
+message of any session regardless of whether `review_history` was restored from disk.
 
 ### Upload clear on send
 
@@ -103,8 +108,10 @@ renders correctly.
 
 - `review_history` must stay text-only — never add component or file dicts to it.
 - `_ui_history` is session-only — do not serialize it.
+- `_thumbnails_shown` is session-only — reset to `False` in `__init__` AND `deserialize()`. Never serialize.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
 - Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.
 - `ComponentMessage` is a Pydantic model: `from gradio.components.chatbot import ComponentMessage`.
 - `sanitize_html=False` on the chatbot is still required for `_inject_extract_buttons` HTML buttons in assistant messages — do not remove it.
+- Do NOT guard thumbnails with `not self.review_history` — that suppresses thumbnails whenever a project with saved history is loaded. Use `not self._thumbnails_shown` instead.

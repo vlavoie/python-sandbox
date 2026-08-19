@@ -16,6 +16,22 @@
     overflow: auto;
 }
 
+/* ── Generating overlay: make it immediately visible ──────────────────── */
+/* Gradio's default .generating style fades in over 1s (pulseStart: 0→1   */
+/* opacity). The first yield (ISSUE-28) transitions status from "pending"  */
+/* (solid spinner) to "generating" instantly, so the solid overlay flashes */
+/* away and the border is invisible for ~1s. This override starts the      */
+/* overlay at full opacity so it's visible for the full streaming duration. */
+.gradio-container .wrap.generating {
+    background: var(--block-background-fill) !important;
+    animation: pasokon-generating 1.3s ease-in-out infinite !important;
+    opacity: 0.88;
+}
+@keyframes pasokon-generating {
+    0%, 100% { opacity: 0.88; }
+    50%       { opacity: 0.52; }
+}
+
 /* ── Extract-prompt button (injected after prompt code blocks) ─────────── */
 .psk-extract-btn {
     display: inline-flex;

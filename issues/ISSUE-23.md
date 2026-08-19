@@ -79,6 +79,35 @@ After Instance 1 removed `gr.Progress()` from `_send_execute`, `show_progress="h
 - To sustain a loading overlay on a component for the full duration, that component must NOT be in the `outputs` of the streaming generator
 - `show_progress="full"` (event kwarg) vs `gr.Progress()` (function parameter) are completely separate mechanisms; only `gr.Progress()` is banned
 
+---
+
+## Instance 4 — generating overlay invisible due to pulseStart animation + "..." missing from chatbot
+
+### Root cause
+
+Two separate problems, same session:
+
+**Problem 1 (flash):** Sub-attempt 3 fixed the overlay's _lifetime_ (it persists for the full generator), but it still appeared to flash. The real cause: Gradio's StatusTracker `.generating` CSS class uses `animation: pulseStart 1s ... , pulse 2s ... 1s infinite`. `pulseStart` fades opacity from **0 → 1 over 1 second**. The ISSUE-28 immediate first yield transitions status from `"pending"` (solid background + spinner, fully visible) to `"generating"` (transparent background + border, opacity 0) instantly. From the user's perspective: solid overlay flashes, then the border is invisible for ~1s, then gradually fades in — looks like the overlay disappeared.
+
+**Problem 2 ("..." missing):** With `show_progress_on=review_input`, the chatbot never gets a `loading_status` update. So no overlay or typing indicator on the chatbot. During the gap between the ISSUE-28 yield (user messages) and the first API token, the chatbot sits empty with no assistant activity indicator.
+
+**Confirmed by reading Gradio source:**
+- `_frontend_code/statustracker/static/index.svelte`: `.generating` class → `background: transparent; animation: pulseStart 1s ...`
+- `pulseStart` keyframe: `0% { opacity: 0 } to { opacity: 1 }` — 1 second fade from invisible
+- `status === "streaming"` also hides the overlay (for SSE streaming connections), but our connection is `"sse"` not `"stream"` so status is correctly `"generating"` — timing is the actual issue
+
+### Fix
+
+**Overlay:** CSS override in `gallery.css` targeting `.gradio-container .wrap.generating` (0,3,0 specificity beats compiled Svelte's 0,2,0). Overrides the transparent background with `var(--block-background-fill)` and replaces `pulseStart` with an immediate pulsing animation that starts at full opacity.
+
+**"...":** Added a `{"role": "assistant", "content": "..."}` yield immediately before each API call in `_send_execute` (both the `stream_start_review` and `stream_chat_completions` paths). This shows a thinking indicator in the chatbot during the gap between user message submission and first API token.
+
+### Key invariants
+
+- `gallery.css` selector `.gradio-container .wrap.generating` targets ALL generating overlays in the app. Currently only `_send_execute` uses `show_progress="full"`, so only `review_input` is affected. If future events add `show_progress="full"`, their overlays will also be immediately visible — which is desirable.
+- The CSS fix is Gradio version-dependent: `gallery.css` is version-safe (targets `.wrap.generating` without the Svelte hash) and should survive Gradio updates.
+- The "..." yield must NOT be inside the `not had_yield` / error branches — it goes before the API call, not before the error check.
+
 ### Note on gr.MultimodalTextbox
 
 `gr.MultimodalTextbox` (Gradio 5) combines text input + file upload + submit button into one component. It was evaluated as a potential "better integrated input" but is not the right fit: the existing `gr.File` is a deliberate pre-chat image-upload flow (separate from message text), and switching would change the input format and interaction model without improving the progress indicator situation.

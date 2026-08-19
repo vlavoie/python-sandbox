@@ -139,6 +139,17 @@
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }, true);
 
+    // ── Review chatbot: only .psk-extract-btn clicks fire the select event ──
+    // All other clicks inside a message bubble are blocked so the user
+    // cannot accidentally extract by clicking on surrounding text or the
+    // code block itself.
+    document.addEventListener('click', (e) => {
+        const msg = e.target.closest('.psk-review-chatbot .message');
+        if (!msg) return;                            // not a chatbot message click
+        if (e.target.closest('.psk-extract-btn')) return;  // button — let it through
+        e.stopImmediatePropagation();               // block everything else
+    }, true);
+
     // ── Thumbnail click → lightbox ─────────────────────────────────────
     document.addEventListener('click', (e) => {
         if (!e.target.matches('.psk-thumb')) return;

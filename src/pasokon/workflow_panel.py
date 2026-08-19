@@ -85,6 +85,10 @@ class WorkflowPanel(ABC):
         # include base64-embedded image thumbnails in user messages.  Never sent
         # to the API; reset to text-only review_history on project load.
         self._ui_history: List = []
+        # Set to True after the first message of each session has shown thumbnails.
+        # Using review_history as the guard would skip thumbnails when history is
+        # loaded from disk — this flag resets on every project load instead.
+        self._thumbnails_shown: bool = False
 
     # ── abstract interface ────────────────────────────────────────────────
 
@@ -644,8 +648,15 @@ class WorkflowPanel(ABC):
             self.review_history = [user_msg, {"role": "assistant", "content": partial}]
             ps.save_project_state()
 
+    _PRE_STYLE = (
+        "white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;"
+        "overflow:auto;background:var(--code-background-fill);"
+        "padding:var(--spacing-xxl);border-radius:var(--radius-sm);"
+        "font-family:var(--font-mono);font-size:var(--text-sm);display:block;margin:.5em 0;"
+    )
+
     def _inject_extract_buttons(self, content: str) -> str:
-        """Append a clickable extract button after each prompt code block."""
+        """Replace each prompt code block with a styled <pre> and an extract button."""
         if "```" not in content:
             return content
 
@@ -654,12 +665,13 @@ class WorkflowPanel(ABC):
             cleaned = GrokClient._clean_prompt_text(raw)
             if not cleaned:
                 return raw
-            escaped = _html.escape(cleaned, quote=True)
+            body = _html.escape(cleaned)
+            attr = _html.escape(cleaned, quote=True)
             panel = self.panel_id
             return (
-                raw
+                f'<pre style="{self._PRE_STYLE}">{body}</pre>'
                 + f'\n<button class="psk-extract-btn" data-panel="{panel}"'
-                + f' data-prompt="{escaped}">↗ Use this prompt</button>'
+                + f' data-prompt="{attr}">↗ Use this prompt</button>'
             )
 
         return re.sub(r"```.*?```", _replace, content, flags=re.DOTALL)
@@ -719,6 +731,7 @@ class WorkflowPanel(ABC):
             else m
             for m in self.review_history
         ]
+        self._thumbnails_shown = False
 
     def _build_display_user_msgs(self, text: str, images: List[str]) -> List[dict]:
         """User turn messages: one text bubble, then one HTML gallery bubble if images."""
@@ -756,6 +769,7 @@ class WorkflowPanel(ABC):
             bubble_full_width=False,
             type="messages",
             sanitize_html=False,
+            elem_classes=["psk-review-chatbot"],
         )
         with gr.Row(equal_height=True):
             self.review_input = gr.Textbox(
@@ -906,15 +920,20 @@ class WorkflowPanel(ABC):
             prior_gallery = render_gallery_html(self.generated_images or [])
 
             # Determine images to show as thumbnails under this user message.
-            # First message: show the images being sent for review.
+            # First message of any session: show generated images (loaded history
+            # does NOT suppress this — _thumbnails_shown resets on project load).
             # Continuation with uploads: show the uploaded images.
             # Continuation without uploads: no thumbnail strip.
-            if uploaded:
-                display_images = [f for f in uploaded if f is not None]
-            elif not self.review_history:
+            uploaded_clean = [f for f in (uploaded or []) if f is not None]
+            if uploaded_clean:
+                display_images = uploaded_clean
+            elif not self._thumbnails_shown:
                 display_images = list(self.generated_images or [])
             else:
                 display_images = []
+
+            if display_images:
+                self._thumbnails_shown = True
 
             # Build display messages: one text bubble + one image bubble per image.
             display_user_msgs = self._build_display_user_msgs(msg, display_images)
@@ -941,7 +960,8 @@ class WorkflowPanel(ABC):
                 self.review_context = ctx
 
             if not self.review_history:
-                # Fresh start — stream the initial review
+                # Fresh start — show thinking placeholder before API call starts
+                yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": "..."}], prior_gallery
                 had_yield = False
                 for partial_history, images in self.stream_start_review(msg, uploaded):
                     had_yield = True
@@ -975,6 +995,9 @@ class WorkflowPanel(ABC):
                 gallery_html = render_gallery_html(self.review_context.get("failed_images", []))
                 partial = ""
                 error = None
+
+                # Show thinking placeholder before API call starts
+                yield prior_ui_history + display_user_msgs + [{"role": "assistant", "content": "..."}], gallery_html
 
                 try:
                     for token in client.stream_chat_completions(messages):
