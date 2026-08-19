@@ -104,6 +104,33 @@ message of any session regardless of whether `review_history` was restored from 
 `_send_finish` returns `gr.update(value=None)` for `_failed_upload` as a third value.
 `_finish_event_kwargs` outputs: `[review_input, _send_btn, _failed_upload]`.
 
+## Attempt 6 — Reload still missing galleries (misaligned indices from old saves)
+
+Root cause: projects saved BEFORE the `review_galleries` feature was added have no
+`review_galleries` key in the JSON → `deserialize` loads it as `[]`. When a new message
+is sent in a continuation session, `prior_galleries = []` (0 entries) but
+`prior_api_history` may have N > 0 entries from history. The continuation save then writes:
+
+```
+review_galleries = prior_galleries + [display_images, []] = [[imgs], []]  # only 2 entries
+review_history   = prior_api_history + [new_user, new_assistant]          # N+2 entries
+```
+
+On reload, `deserialize` maps `review_galleries[i]` by index, so:
+- `i=0` (first OLD user message): assigned `[imgs]` from the NEW message → wrong gallery
+- `i=N` (the NEW user message): `N >= 2` so falls out of bounds → `gallery_paths = []` → no gallery
+
+Fix: before extending `prior_galleries` in the continuation path, pad it with `[]` entries
+up to `len(prior_api_history)` so indices stay aligned:
+
+```python
+while len(prior_galleries) < len(prior_api_history):
+    prior_galleries.append([])
+```
+
+After padding: old messages get `[]` (no gallery, correct), new message gets `[imgs]` at
+the correct index.
+
 ## Invariants to preserve
 
 - `review_history` must stay text-only — never add component or file dicts to it.
@@ -113,6 +140,7 @@ message of any session regardless of whether `review_history` was restored from 
 - `review_galleries` must be kept in sync with `review_history` — cleared in `_start_new_prompt`, set to `[display_images, []]` after fresh start, extended with `[display_images, []]` after each continuation.
 - `deserialize()` rebuilds `_ui_history` by iterating `review_history` and injecting a gallery bubble after each user message whose `review_galleries[i]` is non-empty.
 - `_build_display_user_msgs` returns a LIST; all callers must concatenate, not wrap in `[...]`.
+- `prior_galleries` must be padded to `len(prior_api_history)` before extension — old saves lack `review_galleries` entirely, so `prior_galleries` can be `[]` while `prior_api_history` has N entries; without padding, gallery indices become misaligned across the history.
 - `_send_finish` outputs: `[review_input, _send_btn, _failed_upload]` — must stay in sync with the 3-value return tuple.
 - Use `ComponentMessage` (not `gr.HTML`) for gallery bubbles — `gr.HTML` is mutated by `_postprocess_content` (value popped on first yield); `ComponentMessage` is returned as-is.
 - `ComponentMessage` is a Pydantic model: `from gradio.components.chatbot import ComponentMessage`.

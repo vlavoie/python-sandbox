@@ -935,6 +935,10 @@ class WorkflowPanel(ABC):
             prior_ui_history = list(self._ui_history)
             prior_api_history = list(self.review_history)
             prior_galleries = list(self.review_galleries)
+            # Old saves lack review_galleries entirely — pad so indices align with
+            # prior_api_history before we extend with the new turn.
+            while len(prior_galleries) < len(prior_api_history):
+                prior_galleries.append([])
             prior_gallery = render_gallery_html(self.generated_images or [])
 
             # Thumbnails appear below every user message.
