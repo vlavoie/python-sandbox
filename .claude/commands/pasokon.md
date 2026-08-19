@@ -104,6 +104,7 @@ Before editing `fpv-pov-image.md` or `fpv-pov-review.md`, read:
 - `tuning/TUNING-3.md` — viewer body parts must use first-person pronouns ("my hand", "I reach"); depersonalized language ("forearms extending", "viewer's arm") causes Aurora to treat them as a separate character's hands
 - `tuning/TUNING-4.md` — prior attempt inventory step added to ALL review loops (fpv-pov-review.md, fpv-pov-element.md, finalize prefix); forces model to synthesize full trial record before proposing. **TUNING-4b:** extended to element and finalize after observing same anchoring failure there
 - `tuning/TUNING-5.md` — deep reasoning parity for element and finalize: added functional identity check, correction rules (density matters), when-no-feedback handler, and pre-submission check sequence to fpv-pov-element.md and finalize_workflow.py prefix
+- `tuning/TUNING-6.md` — vehicle lean-in scenes: rear-side-of-window full anchor set (left-side-of-car + seatback-visible + driver-body-orientation-after-description + driver-hands-pinned); foreground arm hip-height rule; style clause must be first and no complex lighting language anywhere
 
 ## Issue workflow
 Create an `issues/ISSUE-N.md` (next number in sequence) for **every bug fix AND every new feature**.

@@ -162,6 +162,60 @@ Describe them by what they look like and where they are in the frame, as seen fr
 
 ---
 
+## Style anchor — lighting rule
+
+**The style clause must be the absolute first clause of every prompt, before any spatial description.** Aurora weights opening tokens most heavily; a style anchor buried mid-prompt or at the end loses to whatever lighting language is nearby.
+
+For simple/flat anime styles: after the style clause, **never include complex lighting descriptions** anywhere in the prompt. Language like "warm amber light casting dramatic shadows", "cool neon reflections across wet asphalt", or "backlit with rim lighting" overrides flat-lighting anchors even when the style clause is front-loaded. Describe scene elements that carry light (neon signs, streetlamps, open windows) but do not describe how that light behaves on surfaces. The style clause owns all lighting — trust it.
+
+---
+
+## Car-window / vehicle-adjacent lean-in scenes
+
+These scenes have a deeply trained Aurora default: camera in front of the open window, subject looking straight out. Vague "rear side" or "backside" language does not override it. Use the full anchor set below.
+
+### Rear-side-of-window perspective (camera behind the window frame)
+
+All four anchors are required together. Any subset fails.
+
+**1. Explicit car side:**
+`"standing on the left side of the [car] at the rear edge of the open driver's window"`
+— "left side" is the critical pin. Do not use "rear side of the window" (Aurora ignores it). Do not add directional windshield language ("A-pillar visible to the right") — this triggers right-hand-drive / passenger-side misinterpretation.
+
+**2. Seatback visible in foreground:**
+`"the back of the driver's black leather seat plus the steering wheel and dashboard visible in the near-left and central foreground past which I am looking"`
+— seatback visible = camera is physically behind the seat. Impossible from the front of the window. This is the geometric proof of rear-side position.
+
+**3. Driver's body orientation — placed after the full physical description:**
+`"[full man description] turned in his seat with head and neck cranked sharply over his left shoulder looking back at me"`
+— encodes rear-side through the driver's body. Must follow the complete physical description (skin tone, age, shirt, etc.) or Aurora substitutes the IMAGE_0 reference character into the driver's seat.
+
+**4. Driver's hands pinned:**
+`"driver's left hand on the steering wheel and his right hand on the gear shift"`
+— without this, Aurora hallcinates reaching/leaning arm poses that break the composition.
+
+### Foreground arm positions in lean-in scenes
+
+Aurora's default: the most identifiable arm (e.g. the braceleted arm) goes to the upper contact point (roof, top of door frame). To place an arm at the window sill (low):
+- Describe the **lower arm first**
+- Use an absolute physical height: **`"at hip height"`** — not "lower portion of the frame" (soft, ignored)
+- Add a directional vector: **`"angled down toward the lower-left corner"`**
+
+For the upper arm (on roof):
+- `"coming from the [left/right] side of the frame resting on the car roof just above the window"` — entry direction disambiguates it
+
+**Working pattern:**
+```
+my left gold-braceleted tanned wrist and forearm resting on the bottom sill of the open window at hip height in the lower-left portion of the frame angled down toward the lower-left corner, my right forearm coming from the right side of the frame resting on the car roof just above the window at the upper portion of the frame
+```
+
+### What not to use in car-window scenes
+- **`"diagonal from lower left to upper right"`** — this is the front-side perspective diagonal; using it while claiming rear-side produces contradictory exterior geometry
+- **`"camera horizon at exact vertical center"`** — this is for standing/walking scenes, not lean-in compositions
+- **`"turned in seat"`** placed before the man's physical description — causes character substitution
+
+---
+
 ## Output format
 
 Generate a single natural-language prompt. Front-load the POV anchor, camera direction, and primary frame content. Use spatial descriptions. No ban lists. No repetition. No negative language. State each element once, precisely.
