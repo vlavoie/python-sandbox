@@ -402,8 +402,10 @@ class ReviewMixin:
 
         def _send_start(msg):
             prior_history = list(self._ui_history)
-            # Only show the buffer on a fresh start; follow-up messages carry no buffer.
-            prior_gallery = render_gallery_html(self.generated_images or []) if not self.review_history else ""
+            # Always show the buffer so it stays visible during the API call.
+            # _flush_gallery clears it to "" after a successful response; error
+            # paths preserve it so the user can retry without losing context.
+            prior_gallery = render_gallery_html(self.generated_images or [])
             pending = prior_history + [{"role": "user", "content": msg}]
             return pending, gr.update(interactive=False), prior_gallery, gr.update(interactive=False)
 
@@ -420,11 +422,20 @@ class ReviewMixin:
 
             # Thumbnails appear below every user message.
             # Fresh start: bundle generated images + any uploads.
-            # Follow-up (continue): only explicitly uploaded files — generated images
-            # are already in the review context; re-attaching them every turn would
-            # mislead the user into thinking new images are being sent.
+            # Continue with NEW generated images: include them so the user can see
+            #   which images are being analyzed (detected via _last_send_images).
+            # Continue with same images as last send: only explicitly uploaded files —
+            #   re-showing unchanged images every turn would be redundant/misleading.
             uploaded_clean = [f for f in (uploaded or []) if f is not None]
-            display_images = (list(self.generated_images or []) + uploaded_clean) if not prior_api_history else uploaded_clean
+            current_gen = list(self.generated_images or [])
+            if not prior_api_history:
+                display_images = current_gen + uploaded_clean
+            elif current_gen != self._last_send_images:
+                # Images were regenerated since the last send — show thumbnails so
+                # the user knows which images are now being analyzed.
+                display_images = current_gen + uploaded_clean
+            else:
+                display_images = uploaded_clean
 
             # Build display messages: one text bubble + one image bubble per image.
             display_user_msgs = self._build_display_user_msgs(msg, display_images)
@@ -473,6 +484,7 @@ class ReviewMixin:
                     ]
                     self._ui_history = display_user_msgs + tail
                     self.review_galleries = [display_images, []]
+                    self._last_send_images = current_gen
                     self.app.project_state.save_project_state()
                     # Final yield: push the button-injected history to the chatbot.
                     # Empty gallery clears the review buffer now that images are in the chat.
@@ -516,6 +528,7 @@ class ReviewMixin:
                         {"role": "assistant", "content": partial},
                     ]
                     self.review_galleries = prior_galleries + [display_images, []]
+                    self._last_send_images = current_gen
                     self.app.project_state.save_project_state()
                     # Empty gallery clears the review buffer now that images are in the chat.
                     yield final_ui, ""

@@ -81,6 +81,10 @@ class WorkflowPanel(GenerationMixin, ReviewMixin, ABC):
         # include base64-embedded image thumbnails in user messages.  Never sent
         # to the API; reset to text-only review_history on project load.
         self._ui_history: List = []
+        # Session-only — generated_images snapshot from the last successful send.
+        # Used to detect whether new images were generated since the last turn so
+        # that continue sends can show thumbnails when the image set changed.
+        self._last_send_images: List[str] = []
 
     # ── abstract interface ────────────────────────────────────────────────
 

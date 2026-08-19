@@ -154,6 +154,7 @@ Before making changes to review flow, project loading, or image persistence, rea
 - `issues/ISSUE-32.md` — [feature] "↗ Use this prompt" button injected after prompt code blocks; JS bridge (hidden textbox) → _on_bridge_input; removed Extract button
 - `issues/ISSUE-33.md` — [bug] prompt code blocks in review chat render as single line; fix: _inject_extract_buttons converts ``` blocks to inline-styled <pre> — static CSS and JS observers can't reliably beat Gradio's lazily-loaded MarkdownCode component CSS
 - `issues/ISSUE-34.md` — [feature] review tab buffer (failed_gallery) cleared after successful send; output_gallery in Generate Images tab unaffected
+- `issues/ISSUE-35.md` — [bug] buffer cleared on Send click for continue sends; no thumbnails after regeneration; fix: _send_start always shows buffer, _last_send_images tracks changes
 
 ## Work item / iteration model
 - `work_item` increments when `_start_new_prompt()` is called with prior work present
